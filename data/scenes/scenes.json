@@ -1,0 +1,184 @@
+{
+  "scenes": [
+    {
+      "name": "cenario1-horizontal",
+      "image": "cenario1-horizontal.png",
+      "corners": [
+        {
+          "x": 613.6145396704613,
+          "y": 413.2437916848079
+        },
+        {
+          "x": 1445.8372745424551,
+          "y": 413.2300791100668
+        },
+        {
+          "x": 1445.8481795961077,
+          "y": 950.4864330584782
+        },
+        {
+          "x": 613.2794312474283,
+          "y": 950.7505032939159
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "cenario2-horizontal",
+      "image": "cenario2-horizontal.png",
+      "corners": [
+        {
+          "x": 656.7614576448078,
+          "y": 610.8388532064685
+        },
+        {
+          "x": 1395.6146175253855,
+          "y": 611.1569216536975
+        },
+        {
+          "x": 1395.6889780319002,
+          "y": 1081.8170876290567
+        },
+        {
+          "x": 657.0601720785622,
+          "y": 1081.7349833658557
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "cenario3-horizontal",
+      "image": "cenario3-horizontal.png",
+      "corners": [
+        {
+          "x": 539.4915689193999,
+          "y": 625.0719901343101
+        },
+        {
+          "x": 1480.6632971334875,
+          "y": 624.640903153619
+        },
+        {
+          "x": 1482.118437843456,
+          "y": 1205.6669256640826
+        },
+        {
+          "x": 539.4424700840269,
+          "y": 1205.6009429463852
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "cenario1-vertical",
+      "image": "cenario1-vertical.png",
+      "corners": [
+        {
+          "x": 751.2019211778921,
+          "y": 405.1220431252368
+        },
+        {
+          "x": 1304.078625617702,
+          "y": 405.12205195744275
+        },
+        {
+          "x": 1304.560970047876,
+          "y": 1125.279906458022
+        },
+        {
+          "x": 750.6231003543083,
+          "y": 1126.1481476296294
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "cenario2-vertical",
+      "image": "cenario2-vertical.png",
+      "corners": [
+        {
+          "x": 730.379474843336,
+          "y": 453.82630374486837
+        },
+        {
+          "x": 1297.5742123247207,
+          "y": 454.0016039273395
+        },
+        {
+          "x": 1297.8698872785533,
+          "y": 1291.9581283769435
+        },
+        {
+          "x": 730.1829947525439,
+          "y": 1292.289603089518
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "cenario3-vertical",
+      "image": "cenario3-vertical.png",
+      "corners": [
+        {
+          "x": 730.9062698859465,
+          "y": 453.961722994213
+        },
+        {
+          "x": 1298.5568693007708,
+          "y": 453.81594547542267
+        },
+        {
+          "x": 1298.8378741341119,
+          "y": 1291.6891258616417
+        },
+        {
+          "x": 730.8686558813422,
+          "y": 1291.9737558409663
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    }
+  ]
+}

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Art Mockup Batch Generator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>Art Mockup Batch Generator</h1>
+    <nav>
+      <button class="tab active" data-tab="scenes">1. Scenes</button>
+      <button class="tab" data-tab="artworks">2. Artworks</button>
+      <button class="tab" data-tab="generate">3. Generate</button>
+    </nav>
+    <div id="toast" hidden></div>
+  </header>
+
+  <!-- SCENES -->
+  <main id="tab-scenes" class="panel">
+    <aside class="side">
+      <h2>Scenes</h2>
+      <ul id="sceneList" class="list"></ul>
+      <form id="uploadForm" class="stack">
+        <label>Add scene photo
+          <input type="file" id="sceneFile" accept="image/png,image/jpeg,image/webp" required>
+        </label>
+        <input type="text" id="sceneNameNew" placeholder="Scene name (optional)">
+        <button type="submit">Upload</button>
+      </form>
+    </aside>
+
+    <section class="stage">
+      <div class="toolbar">
+        <span id="cornerHint" class="muted"></span>
+        <span class="spacer"></span>
+        <button id="btnResetCorners" type="button">Reset corners</button>
+        <button id="btnAiCorners" type="button" class="aiBtn">Auto-detect corners (AI)</button>
+        <button id="btnFit" type="button">Fit view</button>
+        <button id="btnSave" type="button" class="primary">Save scene</button>
+      </div>
+      <div id="canvasWrap"><canvas id="cv"></canvas><div id="emptyScene" class="empty">Select or upload a scene</div></div>
+      <p class="muted small">Click the 4 corners of the blank art area (top-left → top-right → bottom-right → bottom-left). Drag points to adjust, drag background to pan, scroll to zoom.</p>
+    </section>
+
+    <aside class="side wide" id="settingsPane">
+      <h2>Scene settings</h2>
+      <div class="stack">
+        <label>Name <input id="sName" type="text"></label>
+        <label>Fit mode
+          <select id="sFit"><option value="cover">cover (crop to fill)</option><option value="contain">contain (matte)</option><option value="stretch">stretch</option></select>
+        </label>
+        <label id="matteRow">Matte color <input id="sMatte" type="color" value="#ffffff"></label>
+        <label>Lighting <output id="oLight"></output><input id="sLight" type="range" min="0" max="1" step="0.05"></label>
+        <label>Glare <output id="oGlare"></output><input id="sGlare" type="range" min="0" max="1" step="0.05"></label>
+        <label>Edge feather (px) <output id="oFeather"></output><input id="sFeather" type="range" min="0" max="6" step="0.5"></label>
+        <label>Expected artwork aspect (w/h, optional) <input id="sAspect" type="number" step="0.01" min="0" placeholder="e.g. 0.75"></label>
+        <button id="btnDelete" type="button" class="danger">Delete scene</button>
+      </div>
+
+      <h2>Preview</h2>
+      <div class="stack">
+        <label>Artwork <select id="pvArt"></select></label>
+        <div class="row">
+          <button id="btnPreview" type="button">Render preview</button>
+          <button id="btnSheet" type="button">Contact sheet (6)</button>
+        </div>
+        <div id="aspectWarn" class="warn" hidden></div>
+        <div id="pvBox" class="pvBox"><img id="pvImg" alt=""><span id="pvMsg" class="muted">Set 4 corners to preview.</span></div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ARTWORKS -->
+  <main id="tab-artworks" class="panel col" hidden>
+    <div class="toolbar">
+      <label class="inline">Folder <input id="folderInput" type="text" size="50"></label>
+      <button id="btnFolder" type="button">Set folder</button>
+      <span class="spacer"></span>
+      <span id="artCount" class="muted"></span>
+      <button id="btnAll" type="button">Select all</button>
+      <button id="btnNone" type="button">Select none</button>
+      <button id="btnReload" type="button">Reload</button>
+    </div>
+    <div id="artGrid" class="grid"></div>
+  </main>
+
+  <!-- GENERATE -->
+  <main id="tab-generate" class="panel col" hidden>
+    <div class="cards">
+      <section class="card">
+        <h2>Batch</h2>
+        <div class="row"><strong>Scenes to generate</strong><span class="spacer"></span>
+          <button id="btnScAll" type="button">All</button><button id="btnScNone" type="button">None</button></div>
+        <div id="genScenes" class="stack"></div>
+        <p id="genSummary" class="muted"></p>
+        <label class="inline"><input type="checkbox" id="chkOverwrite"> Overwrite existing outputs</label>
+        <label class="inline">Format
+          <select id="selFormat"><option value="jpg">JPEG (≤ 2 MB each)</option><option value="png">PNG (≤ 2 MB, resized if needed)</option></select>
+        </label>
+        <div class="row">
+          <button id="btnGenerate" class="primary" type="button">Generate all</button>
+          <button id="btnCancel" type="button" disabled>Cancel</button>
+        </div>
+        <div class="progress"><div id="bar"></div></div>
+        <p id="progText" class="muted"></p>
+        <div class="row">
+          <button id="btnOpenOut" type="button">Open output folder</button>
+          <a id="lnkZip" href="/api/output/zip" class="btn">Download all as ZIP</a>
+        </div>
+        <div id="errBox" hidden><h3>Errors</h3><ul id="errList"></ul></div>
+      </section>
+
+      <section class="card">
+        <h2>Captions (AI)</h2>
+        <p class="muted small">Generates a title + Instagram caption per selected artwork and saves <code>captions.csv</code> in the output folder.</p>
+        <textarea id="captionPrompt" rows="8"></textarea>
+        <div class="row">
+          <button id="btnSavePrompt" type="button">Save prompt</button>
+          <button id="btnCaptions" type="button" class="aiBtn">Generate captions CSV</button>
+        </div>
+        <p id="capText" class="muted"></p>
+        <p id="aiNote" class="warn" hidden>AI features are off. Put <code>ANTHROPIC_API_KEY=...</code> in a <code>.env</code> file next to the app and restart.</p>
+      </section>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

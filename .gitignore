@@ -1,0 +1,7 @@
+bin/
+obj/
+.env
+data/.cache/
+data/output/
+*.tmp
+.vs/
