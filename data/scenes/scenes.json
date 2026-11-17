@@ -179,6 +179,66 @@
         "edgeFeatherPx": 1
       },
       "expectedAspectRatio": null
+    },
+    {
+      "name": "jacare",
+      "image": "jacare.jpeg",
+      "corners": [
+        {
+          "x": 60.32459044027527,
+          "y": 253.08045403193194
+        },
+        {
+          "x": 619.7034297436458,
+          "y": 209.3819425991399
+        },
+        {
+          "x": 619.0848005118117,
+          "y": 596.849917675578
+        },
+        {
+          "x": 60.21098528827093,
+          "y": 597.0102405208933
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "detalhes",
+      "image": "detalhes.jpeg",
+      "corners": [
+        {
+          "x": 330.9129671891847,
+          "y": 206.98707757275744
+        },
+        {
+          "x": 933.8146102175888,
+          "y": 206.96310433299604
+        },
+        {
+          "x": 934.0659497937804,
+          "y": 523.0368041096272
+        },
+        {
+          "x": 331.00014622411436,
+          "y": 523.1020552800248
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
     }
   ]
 }
