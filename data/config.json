@@ -1,0 +1,7 @@
+{
+  "artworkFolder": "",
+  "aiModel": "claude-sonnet-5-5",
+  "jpegQuality": 92,
+  "maxOutputBytes": 2000000,
+  "captionPrompt": "You write product copy for a small online store selling decorative framed art prints. Store name: \u003CYOUR STORE NAME\u003E. Tone: warm, modern and inviting. Write in Brazilian Portuguese. Title: a short product title (max 60 characters). Caption: an Instagram caption of 2-3 short sentences with a call to action, followed by 8-12 relevant hashtags."
+}
