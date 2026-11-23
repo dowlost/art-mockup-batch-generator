@@ -42,19 +42,11 @@ document.querySelectorAll('.tab').forEach(b => b.onclick = () => {
 async function init() {
   try { state.selected = new Set(JSON.parse(localStorage.getItem('selectedArtworks') || '[]')); } catch { /* ignore */ }
   state.config = await api('/config');
-  $('captionPrompt').value = state.config.captionPrompt;
   $('folderInput').value = state.config.artworkFolder;
-  const ai = state.config.aiEnabled;
-  document.querySelectorAll('.aiBtn').forEach(b => {
-    b.disabled = !ai; b.classList.toggle('off', !ai);
-    if (!ai) b.title = 'Set ANTHROPIC_API_KEY in .env and restart to enable AI features.';
-  });
-  $('aiNote').hidden = ai;
   await loadScenes();
   await loadArtworks();
   if (state.scenes.length) selectScene(state.scenes[0].name);
-  const running = await api('/batch').catch(() => null);
-  if (running && running.status === 'running') pollBatch(running.id);
+  resumeRunning();
 }
 
 // ---------- scenes ----------
@@ -144,13 +136,6 @@ $('btnDelete').onclick = guard(async () => {
 });
 
 $('btnResetCorners').onclick = () => { state.corners = []; updateHint(); draw(); };
-$('btnAiCorners').onclick = guard(async () => {
-  if (!state.cur) return;
-  toast('Asking Claude to find the frame…');
-  const r = await api('/ai/detect-corners', { json: { scene: state.cur.name } });
-  state.corners = r.corners; updateHint(); draw(); schedulePreview();
-  toast('Suggestion placed. Check it and drag points to adjust before saving.');
-});
 $('btnFit').onclick = () => { fitView(); };
 
 function updateHint() {
@@ -324,68 +309,157 @@ $('btnFolder').onclick = guard(async () => {
   await loadArtworks(); toast('Artwork folder updated.');
 });
 
-// ---------- generate ----------
-const genOff = new Set(); // scenes the user explicitly unticked
+// ---------- generate (still images + zoom videos in one flow) ----------
+const genOff = new Set(); // scenes unticked for images (default: every ready scene is ticked)
+let vidOn = new Set(); // scenes ticked for videos (default: none, videos are slower)
+try { vidOn = new Set(JSON.parse(localStorage.getItem('videoScenes') || '[]')); } catch { /* ignore */ }
+const saveVidOn = () => { try { localStorage.setItem('videoScenes', JSON.stringify([...vidOn])); } catch { /* ignore */ } };
+const sceneReady = s => s.corners.length === 4;
+const pickedScenes = () => state.scenes.filter(s => sceneReady(s) && !genOff.has(s.name)).map(s => s.name);
+const pickedVideoScenes = () => state.scenes.filter(s => sceneReady(s) && vidOn.has(s.name)).map(s => s.name);
+
 function renderGenerate() {
   const box = $('genScenes');
   box.innerHTML = '';
-  if (!state.scenes.some(s => s.corners.length === 4)) {
+  if (!state.scenes.some(sceneReady)) {
     box.innerHTML = '<div class="warn">No scene is ready yet. Go to the Scenes tab, upload a photo and click its 4 corners.</div>';
   }
   for (const s of state.scenes) {
-    const ready = s.corners.length === 4;
-    const l = document.createElement('label'); l.className = 'inline';
-    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = s.name; cb.disabled = !ready;
-    cb.checked = ready && !genOff.has(s.name);
-    cb.onchange = () => { cb.checked ? genOff.delete(s.name) : genOff.add(s.name); updateSummary(); };
-    l.append(cb, document.createTextNode(' ' + s.name + (ready ? '' : ' (set corners first)')));
-    box.appendChild(l);
+    const ready = sceneReady(s);
+    const row = document.createElement('div'); row.className = 'genGrid';
+    const name = document.createElement('span'); name.textContent = s.name + (ready ? '' : ' (set corners first)');
+    const mk = (on, set, onChange) => {
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.disabled = !ready; cb.checked = ready && on;
+      cb.onchange = () => { onChange(cb.checked); updateSummary(); };
+      return cb;
+    };
+    row.append(name,
+      mk(!genOff.has(s.name), genOff, on => on ? genOff.delete(s.name) : genOff.add(s.name)),
+      mk(vidOn.has(s.name), vidOn, on => { on ? vidOn.add(s.name) : vidOn.delete(s.name); saveVidOn(); }));
+    box.appendChild(row);
   }
   updateSummary();
 }
 $('btnScAll').onclick = () => { genOff.clear(); renderGenerate(); };
 $('btnScNone').onclick = () => { state.scenes.forEach(s => genOff.add(s.name)); renderGenerate(); };
-const pickedScenes = () => state.scenes.filter(s => s.corners.length === 4 && !genOff.has(s.name)).map(s => s.name);
+$('btnVidScAll').onclick = () => { state.scenes.filter(sceneReady).forEach(s => vidOn.add(s.name)); saveVidOn(); renderGenerate(); };
+$('btnVidScNone').onclick = () => { vidOn.clear(); saveVidOn(); renderGenerate(); };
+
 function updateSummary() {
-  const s = pickedScenes().length, a = state.selected.size;
-  $('genSummary').textContent = `${s} scene(s) × ${a} artwork(s) = ${s * a} images`;
-  $('genSummary').textContent += !s ? ' — tick at least one scene.' : !a ? ' — select artworks in the Artworks tab.' : '';
+  const si = pickedScenes().length, sv = pickedVideoScenes().length, a = state.selected.size;
+  const parts = [];
+  if (si) parts.push(`${si * a} image(s) (${si} scene(s) × ${a} artwork(s))`);
+  if (sv) parts.push(`${sv * a} video(s) (${sv} scene(s) × ${a} artwork(s))`);
+  $('genSummary').textContent = parts.length ? 'Will generate ' + parts.join(' and ') + '.' : 'Tick at least one scene under Images or Videos.';
+  if (parts.length && !a) $('genSummary').textContent += ' Select artworks in the Artworks tab.';
 }
 
-let polling = null;
-$('btnGenerate').onclick = guard(async () => {
-  if (!pickedScenes().length) throw new Error('No scene ticked. Set the 4 corners in the Scenes tab, save, then tick the scene here.');
-  if (!state.selected.size) throw new Error('No artwork selected. Tick artworks in the Artworks tab.');
-  const job = await api('/batch', { json: { scenes: pickedScenes(), artworks: [...state.selected], overwrite: $('chkOverwrite').checked, format: $('selFormat').value } });
-  $('errBox').hidden = true; pollBatch(job.id);
+$('chkFull').onchange = () => {
+  const full = $('chkFull').checked, o = $('selFormat').options;
+  o[0].textContent = full ? 'JPEG (quality 100, full detail)' : 'JPEG (≤ 2 MB each)';
+  o[1].textContent = full ? 'PNG (lossless, largest files)' : 'PNG (≤ 2 MB, resized if needed)';
+};
+
+// --- video options + preview ---
+function synFillLists() {
+  const sc = $('synScene'), ks = sc.value; sc.innerHTML = '';
+  const ready = state.scenes.filter(sceneReady);
+  ready.forEach(s => sc.add(new Option(s.name, s.name)));
+  if (ks && ready.some(s => s.name === ks)) sc.value = ks;
+  const art = $('synArt'), ka = art.value; art.innerHTML = '';
+  const okArts = state.artworks.filter(a => !a.error);
+  okArts.forEach(a => art.add(new Option(a.file, a.file)));
+  if (ka && okArts.some(a => a.file === ka)) art.value = ka;
+  synInfo();
+}
+const synOptions = () => ({
+  scene: $('synScene').value, orientation: $('synOri').value, seconds: +$('synSec').value, fps: +$('synFps').value,
+  endFill: +$('synFill').value, ease: $('synEase').checked, loop: $('synLoop').checked, overwrite: $('chkOverwrite').checked,
 });
-$('btnCancel').onclick = guard(async () => { if (polling) await api(`/batch/${polling}/cancel`, { method: 'POST' }); });
-function pollBatch(id) {
-  polling = id; $('btnGenerate').disabled = true; $('btnCancel').disabled = false;
-  const tick = async () => {
-    let j;
-    try { j = await api('/batch/' + id); } catch (e) { toast(e.message, true); polling = null; return; }
-    $('bar').style.width = (j.total ? 100 * j.done / j.total : 0) + '%';
-    const info = `${j.done} / ${j.total} — ${j.rendered} rendered, ${j.skipped} skipped, ${j.failed} failed`;
-    $('progText').textContent = j.status === 'running' ? `${info}  ·  ${j.current}` : `${j.status.toUpperCase()}: ${info} (${j.seconds.toFixed(1)}s)`;
-    const list = $('errList'); list.innerHTML = '';
-    j.errors.forEach(er => { const li = document.createElement('li'); li.textContent = `${er.artwork} → ${er.scene}: ${er.message}`; list.appendChild(li); });
-    $('errBox').hidden = j.errors.length === 0;
-    if (j.status === 'running') return setTimeout(tick, 500);
-    polling = null; $('btnCancel').disabled = true; $('btnGenerate').disabled = false; updateSummary();
-  };
-  tick();
+const synInfo = debounce(guard(async () => {
+  $('synFillOut').textContent = Math.round($('synFill').value * 100) + '%';
+  if (!$('synScene').value) { $('synInfo').textContent = ''; return; }
+  const i = await api('/videos/synthetic/info', { json: synOptions() });
+  $('synInfo').textContent = `${i.outWidth}×${i.outHeight} · end-of-zoom upscale ${i.endUpscale.toFixed(1)}×` + (i.endUpscale > 1.5 ? ' (soft: lower End fill or use a bigger scene photo)' : ' (sharp)');
+}), 250);
+['synScene', 'synOri', 'synFill', 'synEase'].forEach(id => $(id).addEventListener('input', synInfo));
+$('btnSynPreview').onclick = guard(async () => {
+  if (!$('synScene').value) throw new Error('No scene with 4 corners. Set one up in the Scenes tab.');
+  const art = $('synArt').value;
+  if (!art) throw new Error('Pick an artwork to preview.');
+  const o = synOptions();
+  for (const [i, t] of [0, 0.5, 1].entries()) {
+    const blob = await api('/videos/synthetic/preview', { json: { options: o, artwork: art, t } });
+    $('synPv' + i).src = URL.createObjectURL(blob);
+  }
+});
+
+// --- running jobs ---
+let activeCancel = null, cancelRequested = false;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const imgUi = { bar: 'bar', text: 'progText', errBox: 'errBox', errList: 'errList' };
+const vidUi = { bar: 'synBar', text: 'synProg', errBox: 'synErrBox', errList: 'synErrList' };
+
+/** Polls a job until it finishes and keeps its progress widgets up to date. */
+async function watchJob(pollPath, cancelPath, ui, noun) {
+  activeCancel = cancelPath;
+  try {
+    for (;;) {
+      const j = await api(pollPath);
+      $(ui.bar).style.width = (j.total ? 100 * j.done / j.total : 0) + '%';
+      const info = `${j.rendered} ${noun}(s) done, ${j.skipped} skipped, ${j.failed} failed`;
+      $(ui.text).textContent = j.status === 'running' ? `${info}  ·  ${j.current}` : `${j.status.toUpperCase()}: ${info} (${j.seconds.toFixed(1)}s)`;
+      const list = $(ui.errList); list.innerHTML = '';
+      j.errors.forEach(er => { const li = document.createElement('li'); li.textContent = `${er.artwork || ''}${er.scene ? ' → ' + er.scene : ''}: ${er.message}`; list.appendChild(li); });
+      $(ui.errBox).hidden = j.errors.length === 0;
+      if (j.status !== 'running') return j;
+      await sleep(600);
+    }
+  } finally { activeCancel = null; }
+}
+const setBusy = busy => { $('btnGenerate').disabled = busy; $('btnCancel').disabled = !busy; };
+
+$('btnGenerate').onclick = guard(async () => {
+  const imgs = pickedScenes(), vids = pickedVideoScenes(), arts = [...state.selected];
+  if (!imgs.length && !vids.length) throw new Error('No scene ticked. Tick scenes under Images and/or Videos (scenes need their 4 corners set in the Scenes tab).');
+  if (!arts.length) throw new Error('No artwork selected. Tick artworks in the Artworks tab.');
+  cancelRequested = false; setBusy(true);
+  $('errBox').hidden = true; $('synErrBox').hidden = true;
+  $('bar').style.width = '0%'; $('synBar').style.width = '0%'; $('progText').textContent = ''; $('synProg').textContent = '';
+  try {
+    if (imgs.length) {
+      const job = await api('/batch', { json: { scenes: imgs, artworks: arts, overwrite: $('chkOverwrite').checked, format: $('selFormat').value, fullQuality: $('chkFull').checked } });
+      await watchJob('/batch/' + job.id, `/batch/${job.id}/cancel`, imgUi, 'image');
+    }
+    if (vids.length && !cancelRequested) {
+      const job = await api('/videos/synthetic', { json: { ...synOptions(), scenes: vids, artworks: arts } });
+      await watchJob('/videos/jobs/' + job.id, `/videos/jobs/${job.id}/cancel`, vidUi, 'video');
+    }
+  } finally { setBusy(false); updateSummary(); }
+});
+$('btnCancel').onclick = guard(async () => { cancelRequested = true; if (activeCancel) await api(activeCancel, { method: 'POST' }); });
+
+/** After a page reload: re-attach to an image batch that is still running. */
+async function resumeRunning() {
+  const running = await api('/batch').catch(() => null);
+  if (running && running.status === 'running') {
+    setBusy(true);
+    try { await watchJob('/batch/' + running.id, `/batch/${running.id}/cancel`, imgUi, 'image'); } finally { setBusy(false); }
+  }
 }
 $('btnOpenOut').onclick = guard(() => api('/output/open', { method: 'POST' }));
-$('btnSavePrompt').onclick = guard(async () => { await api('/config', { method: 'PUT', json: { captionPrompt: $('captionPrompt').value } }); toast('Prompt saved.'); });
-$('btnCaptions').onclick = guard(async () => {
-  if (!state.selected.size) throw new Error('Select at least one artwork.');
-  $('capText').textContent = `Generating ${state.selected.size} captions…`; $('btnCaptions').disabled = true;
-  try {
-    await api('/config', { method: 'PUT', json: { captionPrompt: $('captionPrompt').value } });
-    const r = await api('/ai/captions', { json: { artworks: [...state.selected] } });
-    $('capText').textContent = `${r.count} captions written to ${r.file ?? '(nothing)'}` + (r.errors.length ? ` — ${r.errors.length} failed: ${r.errors[0].message}` : '');
-  } finally { $('btnCaptions').disabled = !state.config.aiEnabled; }
+
+// ---------- rename artworks to the 0000 format ----------
+$('btnRenameArt').onclick = guard(async () => {
+  const plan = await api('/artworks/normalize?dryRun=true', { method: 'POST' });
+  if (!plan.count) { toast('All artworks already use the 0000 format.'); return; }
+  const sample = plan.items.slice(0, 6).map(i => i.from + '  ->  ' + i.to).join('\n');
+  if (!confirm('Rename ' + plan.count + ' artwork(s) to the next free numbers?\n\n' + sample + (plan.count > 6 ? '\n...' : ''))) return;
+  const r = await api('/artworks/normalize', { method: 'POST' });
+  r.items.forEach(i => { if (state.selected.delete(i.from)) state.selected.add(i.to); });
+  persistSelection();
+  await loadArtworks();
+  toast('Renamed ' + r.count + ' artwork(s). The old names are listed in data/artworks-rename-map.csv.');
 });
 
 init().catch(e => toast(e.message, true));

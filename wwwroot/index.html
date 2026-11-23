@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Art Mockup Batch Generator</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20261124a">
 </head>
 <body>
   <header>
@@ -36,7 +36,6 @@
         <span id="cornerHint" class="muted"></span>
         <span class="spacer"></span>
         <button id="btnResetCorners" type="button">Reset corners</button>
-        <button id="btnAiCorners" type="button" class="aiBtn">Auto-detect corners (AI)</button>
         <button id="btnFit" type="button">Fit view</button>
         <button id="btnSave" type="button" class="primary">Save scene</button>
       </div>
@@ -82,6 +81,7 @@
       <button id="btnAll" type="button">Select all</button>
       <button id="btnNone" type="button">Select none</button>
       <button id="btnReload" type="button">Reload</button>
+      <button id="btnRenameArt" type="button" title="Renames every artwork not named 0000 (four digits) to the next free numbers, e.g. 0048, 0049, ...">Rename new artworks to 0000</button>
     </div>
     <div id="artGrid" class="grid"></div>
   </main>
@@ -89,43 +89,65 @@
   <!-- GENERATE -->
   <main id="tab-generate" class="panel col" hidden>
     <div class="cards">
-      <section class="card">
-        <h2>Batch</h2>
-        <div class="row"><strong>Scenes to generate</strong><span class="spacer"></span>
-          <button id="btnScAll" type="button">All</button><button id="btnScNone" type="button">None</button></div>
+      <section class="card wideCard">
+        <h2>Generate</h2>
+        <p class="muted small">Tick the scenes for the still images and, separately, the scenes for the zoom videos. Everything uses the artworks selected in the Artworks tab and is saved in one folder as <code>0001__scene.jpg</code> / <code>0001__scene.mp4</code>.</p>
+
+        <div class="genGrid genHead">
+          <strong>Scenes</strong>
+          <span>Images<br><button id="btnScAll" type="button" class="mini">All</button><button id="btnScNone" type="button" class="mini">None</button></span>
+          <span>Videos<br><button id="btnVidScAll" type="button" class="mini">All</button><button id="btnVidScNone" type="button" class="mini">None</button></span>
+        </div>
         <div id="genScenes" class="stack"></div>
         <p id="genSummary" class="muted"></p>
-        <label class="inline"><input type="checkbox" id="chkOverwrite"> Overwrite existing outputs</label>
+
+        <h3>Images</h3>
+        <label class="inline"><input type="checkbox" id="chkOverwrite"> Overwrite existing outputs (images and videos)</label>
+        <label class="inline" title="No 2 MB cap and no downscaling: JPEG at quality 100 with full colour detail (PNG is lossless). Best for feeding images into video generation. Files will be much larger."><input type="checkbox" id="chkFull"> Full quality (no size limit, max detail)</label>
         <label class="inline">Format
           <select id="selFormat"><option value="jpg">JPEG (≤ 2 MB each)</option><option value="png">PNG (≤ 2 MB, resized if needed)</option></select>
         </label>
+
+        <h3>Videos (zoom into the artwork)</h3>
+        <p class="muted small">A virtual camera glides from the full view into the artwork, so the frame is perfectly steady. It is a flat digital zoom (no 3D parallax). Output is 1080p.</p>
         <div class="row">
-          <button id="btnGenerate" class="primary" type="button">Generate all</button>
-          <button id="btnCancel" type="button" disabled>Cancel</button>
+          <label class="inline">Format <select id="synOri"><option value="landscape">Landscape 1920×1080</option><option value="portrait">Portrait 1080×1920</option></select></label>
+          <label class="inline">Seconds <input id="synSec" type="number" min="1" max="15" step="0.5" value="5" style="width:70px"></label>
+          <label class="inline">FPS <select id="synFps"><option>24</option><option>30</option><option>60</option></select></label>
         </div>
-        <div class="progress"><div id="bar"></div></div>
-        <p id="progText" class="muted"></p>
         <div class="row">
+          <label class="inline">End fill <input id="synFill" type="range" min="0.5" max="1" step="0.01" value="0.9"> <output id="synFillOut">90%</output></label>
+          <label class="inline"><input type="checkbox" id="synEase" checked> Smooth ease in/out</label>
+          <label class="inline"><input type="checkbox" id="synLoop"> Also zoom back out (5 s becomes 10 s)</label>
+        </div>
+        <div class="row">
+          <label class="inline">Preview scene <select id="synScene"></select></label>
+          <label class="inline">artwork <select id="synArt"></select></label>
+          <button id="btnSynPreview" type="button">Preview start / middle / end</button>
+          <span id="synInfo" class="muted small"></span>
+        </div>
+        <div class="row" id="synPv" style="align-items:flex-start">
+          <div class="pvBox" style="flex:1;min-width:200px"><img id="synPv0" alt=""><span class="muted">start</span></div>
+          <div class="pvBox" style="flex:1;min-width:200px"><img id="synPv1" alt=""><span class="muted">middle</span></div>
+          <div class="pvBox" style="flex:1;min-width:200px"><img id="synPv2" alt=""><span class="muted">end</span></div>
+        </div>
+
+        <div class="row">
+          <button id="btnGenerate" class="primary" type="button">Generate</button>
+          <button id="btnCancel" type="button" disabled>Cancel</button>
           <button id="btnOpenOut" type="button">Open output folder</button>
           <a id="lnkZip" href="/api/output/zip" class="btn">Download all as ZIP</a>
         </div>
-        <div id="errBox" hidden><h3>Errors</h3><ul id="errList"></ul></div>
-      </section>
-
-      <section class="card">
-        <h2>Captions (AI)</h2>
-        <p class="muted small">Generates a title + Instagram caption per selected artwork and saves <code>captions.csv</code> in the output folder.</p>
-        <textarea id="captionPrompt" rows="8"></textarea>
-        <div class="row">
-          <button id="btnSavePrompt" type="button">Save prompt</button>
-          <button id="btnCaptions" type="button" class="aiBtn">Generate captions CSV</button>
-        </div>
-        <p id="capText" class="muted"></p>
-        <p id="aiNote" class="warn" hidden>AI features are off. Put <code>ANTHROPIC_API_KEY=...</code> in a <code>.env</code> file next to the app and restart.</p>
+        <div class="progress"><div id="bar"></div></div>
+        <p id="progText" class="muted"></p>
+        <div class="progress"><div id="synBar"></div></div>
+        <p id="synProg" class="muted"></p>
+        <div id="errBox" hidden><h3>Image errors</h3><ul id="errList"></ul></div>
+        <div id="synErrBox" hidden><h3>Video errors</h3><ul id="synErrList"></ul></div>
       </section>
     </div>
   </main>
 
-  <script src="app.js"></script>
+<script src="app.js?v=20261124a"></script>
 </body>
 </html>

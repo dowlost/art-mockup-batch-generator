@@ -18,11 +18,17 @@ public static class ImageIO
         return mat;
     }
 
+    // OpenCV IMWRITE_JPEG_SAMPLING_FACTOR (71): 0x111111 = 4:4:4 (no chroma subsampling).
+    const ImwriteFlags JpegSamplingFactor = (ImwriteFlags)71;
+
     public static byte[] Encode(Mat img, string ext, int jpegQuality)
     {
         ext = ext.StartsWith('.') ? ext : "." + ext;
+        // At quality >= 98 keep full colour resolution (4:4:4) so fine detail survives for video prompts.
         var prms = ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
-            ? new[] { new ImageEncodingParam(ImwriteFlags.JpegQuality, jpegQuality) }
+            ? jpegQuality >= 98
+                ? new[] { new ImageEncodingParam(ImwriteFlags.JpegQuality, jpegQuality), new ImageEncodingParam(JpegSamplingFactor, 0x111111) }
+                : new[] { new ImageEncodingParam(ImwriteFlags.JpegQuality, jpegQuality) }
             : Array.Empty<ImageEncodingParam>();
         Cv2.ImEncode(ext, img, out var buf, prms);
         return buf;
@@ -271,9 +277,11 @@ public sealed class PreparedScene : IDisposable
     }
 
     /// <summary>Prepares the artwork to exactly the frame's aspect ratio according to fit mode.</summary>
-    Mat FitArtwork(Mat art)
+    Mat FitArtwork(Mat art) => FitToCanvas(art, _frameW, _frameH, _s);
+
+    /// <summary>Fits the artwork into a canvas of exactly w×h according to the scene's fit mode (cover / contain / stretch).</summary>
+    public static Mat FitToCanvas(Mat art, int w, int h, SceneSettings _s)
     {
-        int w = _frameW, h = _frameH;
         static InterpolationFlags Interp(double scale) => scale < 1 ? InterpolationFlags.Area : InterpolationFlags.Cubic;
 
         if (_s.FitMode == "stretch")

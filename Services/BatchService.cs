@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 
 namespace ArtMockups;
 
-public record BatchRequest(List<string> Scenes, List<string> Artworks, bool Overwrite, string? Format);
+public record BatchRequest(List<string> Scenes, List<string> Artworks, bool Overwrite, string? Format, bool FullQuality = false);
 public record BatchError(string Scene, string Artwork, string Message);
 
 public sealed class BatchJob
@@ -47,8 +47,9 @@ public sealed class BatchService(AppPaths paths, SceneStore scenes, SceneImageCa
 
         var job = new BatchJob { Total = sceneList.Count * artworks.Count };
         _jobs[job.Id] = job;
-        var quality = config.Current.JpegQuality;
-        var maxBytes = config.Current.MaxOutputBytes;
+        // Full quality: no size cap, JPEG at 100 with 4:4:4 colour, PNG is lossless anyway.
+        var quality = req.FullQuality ? 100 : config.Current.JpegQuality;
+        var maxBytes = req.FullQuality ? 0 : config.Current.MaxOutputBytes;
 
         _ = Task.Run(async () =>
         {
@@ -69,7 +70,8 @@ public sealed class BatchService(AppPaths paths, SceneStore scenes, SceneImageCa
                     try
                     {
                         var stem = Names.SafeFileStem(Path.GetFileNameWithoutExtension(art));
-                        var outPath = Path.Combine(paths.OutputDir, scene.Name, $"{stem}__{scene.Name}.{ext}");
+                        // one flat output folder: 0001__<scene>.jpg
+                        var outPath = Path.Combine(paths.OutputDir, $"{stem}__{Names.SafeFileStem(scene.Name)}.{ext}");
                         if (!req.Overwrite && File.Exists(outPath))
                         {
                             Interlocked.Increment(ref job.Skipped);

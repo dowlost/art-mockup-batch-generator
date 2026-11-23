@@ -6,8 +6,6 @@ using ArtMockups;
 using Microsoft.AspNetCore.Http.Json;
 using OpenCvSharp;
 
-LoadDotEnv(Path.Combine(Directory.GetCurrentDirectory(), ".env"));
-
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls(Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://localhost:8000");
 builder.Services.Configure<JsonOptions>(o => o.SerializerOptions.PropertyNameCaseInsensitive = true);
@@ -17,7 +15,7 @@ builder.Services.AddSingleton<SceneStore>();
 builder.Services.AddSingleton<SceneImageCache>();
 builder.Services.AddSingleton<ArtworkLibrary>();
 builder.Services.AddSingleton<BatchService>();
-builder.Services.AddSingleton(sp => new AiService(sp.GetRequiredService<ConfigStore>(), new HttpClient { Timeout = TimeSpan.FromSeconds(90) }));
+builder.Services.AddSingleton<ZoomVideoService>();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o => o.MultipartBodyLengthLimit = 200_000_000);
 
 var app = builder.Build();
@@ -34,18 +32,19 @@ app.UseExceptionHandler(errApp => errApp.Run(async ctx =>
     await ctx.Response.WriteAsJsonAsync(new { error = ex?.Message ?? "Unexpected error." });
 }));
 app.UseDefaultFiles();
-app.UseStaticFiles();
+// Always revalidate the UI files so a rebuilt app.js/index.html is never served stale from the browser cache.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache",
+});
 
 var api = app.MapGroup("/api");
 
 // ---------- config ----------
-api.MapGet("/config", (ConfigStore cfg, AiService ai, ArtworkLibrary lib, AppPaths paths) => new
+api.MapGet("/config", (ConfigStore cfg, ArtworkLibrary lib, AppPaths paths) => new
 {
-    aiEnabled = ai.Enabled,
-    aiModel = cfg.Current.AiModel,
     artworkFolder = lib.Folder,
     outputFolder = paths.OutputDir,
-    captionPrompt = cfg.Current.CaptionPrompt,
 });
 
 api.MapPut("/config", (ConfigPatch p, ConfigStore cfg, ArtworkLibrary lib, AppPaths paths) =>
@@ -56,7 +55,6 @@ api.MapPut("/config", (ConfigPatch p, ConfigStore cfg, ArtworkLibrary lib, AppPa
         if (!Directory.Exists(paths.Resolve(p.ArtworkFolder))) throw new DirectoryNotFoundException($"Folder not found: {p.ArtworkFolder}");
         c.ArtworkFolder = p.ArtworkFolder;
     }
-    if (p.CaptionPrompt != null) c.CaptionPrompt = p.CaptionPrompt;
     cfg.Save(c);
     return Results.Ok(new { artworkFolder = lib.Folder });
 });
@@ -88,6 +86,13 @@ api.MapGet("/scenes/{name}/image", (string name, SceneStore s) =>
 
 // ---------- artworks ----------
 api.MapGet("/artworks", (ArtworkLibrary lib) => lib.List());
+
+// renames artworks that are not named 0000 to the next free four-digit numbers (dryRun=true only reports the plan)
+api.MapPost("/artworks/normalize", (bool? dryRun, ArtworkLibrary lib) =>
+{
+    var items = lib.NormalizeNames(dryRun ?? false);
+    return new { dryRun = dryRun ?? false, count = items.Count, items };
+});
 
 api.MapGet("/artworks/{file}/thumb", (string file, ArtworkLibrary lib) =>
 {
@@ -158,15 +163,24 @@ api.MapPost("/batch/{id}/cancel", (string id, BatchService b) =>
 });
 
 // ---------- output ----------
-api.MapPost("/output/open", (AppPaths paths) =>
+static void OpenFolder(string dir)
 {
-    Directory.CreateDirectory(paths.OutputDir);
+    Directory.CreateDirectory(dir);
     var psi = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-        ? new ProcessStartInfo(paths.OutputDir) { UseShellExecute = true }
-        : new ProcessStartInfo(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "open" : "xdg-open", $"\"{paths.OutputDir}\"");
+        ? new ProcessStartInfo(dir) { UseShellExecute = true }
+        : new ProcessStartInfo(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "open" : "xdg-open", $"\"{dir}\"");
     Process.Start(psi);
-    return Results.Ok();
-});
+}
+
+api.MapPost("/output/open", (AppPaths paths) => { OpenFolder(paths.OutputDir); return Results.Ok(); });
+
+// ---------- zoom videos (virtual camera over the composited scene) ----------
+api.MapPost("/videos/synthetic", (SyntheticRequest req, ZoomVideoService z) => Results.Ok(z.StartSynthetic(req).Snapshot()));
+api.MapPost("/videos/synthetic/info", (SyntheticRequest req, ZoomVideoService z) => Results.Ok(z.SyntheticInfo(req)));
+api.MapPost("/videos/synthetic/preview", async (SyntheticPreview pv, ZoomVideoService z) =>
+    Results.File(await z.PreviewSyntheticAsync(pv.Options, pv.Artwork, pv.T), "image/jpeg"));
+api.MapGet("/videos/jobs/{id}", (string id, ZoomVideoService z) => z.Get(id) is { } j ? Results.Ok(j.Snapshot()) : Results.NotFound());
+api.MapPost("/videos/jobs/{id}/cancel", (string id, ZoomVideoService z) => { z.Get(id)?.Cts.Cancel(); return Results.Accepted(); });
 
 api.MapGet("/output/zip", (AppPaths paths) =>
 {
@@ -181,61 +195,12 @@ api.MapGet("/output/zip", (AppPaths paths) =>
     return Results.File(tmp, "application/zip", "mockups.zip");
 });
 
-// ---------- AI (optional) ----------
-api.MapPost("/ai/detect-corners", async (DetectRequest r, AiService ai, SceneStore scenes, SceneImageCache cache, CancellationToken ct) =>
-{
-    var scene = scenes.Get(r.Scene);
-    return new { corners = await ai.DetectCornersAsync(cache.Get(scene), ct) };
-});
-
-api.MapPost("/ai/captions", async (CaptionRequest r, AiService ai, ArtworkLibrary lib, AppPaths paths, CancellationToken ct) =>
-{
-    if (!ai.Enabled) throw new ArgumentException("AI features are disabled: set ANTHROPIC_API_KEY in the .env file and restart.");
-    var rows = new List<AiService.Caption>();
-    var errors = new List<BatchError>();
-    foreach (var file in r.Artworks.Distinct())
-    {
-        try
-        {
-            using var art = ImageIO.Load(lib.Resolve(file));
-            rows.Add(await ai.CaptionAsync(file, art, ct));
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            errors.Add(new BatchError("", file, ex.Message));
-        }
-    }
-    string? written = null;
-    if (rows.Count > 0)
-    {
-        written = Path.Combine(paths.OutputDir, "captions.csv");
-        await File.WriteAllTextAsync(written, AiService.ToCsv(rows), ct);
-    }
-    return new { count = rows.Count, file = written, errors };
-});
-
 app.Lifetime.ApplicationStarted.Register(() => Console.WriteLine("Art Mockup Batch Generator running at " + string.Join(", ", app.Urls)));
 app.Run();
 
-static void LoadDotEnv(string path)
-{
-    if (!File.Exists(path)) return;
-    foreach (var raw in File.ReadAllLines(path))
-    {
-        var line = raw.Trim();
-        if (line.Length == 0 || line.StartsWith('#')) continue;
-        var i = line.IndexOf('=');
-        if (i <= 0) continue;
-        var key = line[..i].Trim();
-        var val = line[(i + 1)..].Trim().Trim('"', '\'');
-        if (Environment.GetEnvironmentVariable(key) == null) Environment.SetEnvironmentVariable(key, val);
-    }
-}
-
-record ConfigPatch(string? ArtworkFolder, string? CaptionPrompt);
+record ConfigPatch(string? ArtworkFolder);
 record PreviewRequest(string Scene, string Artwork, List<PointD>? Corners, SceneSettings? Settings, int? MaxSide);
 record SheetRequest(string Scene, List<string> Artworks, List<PointD>? Corners, SceneSettings? Settings);
-record DetectRequest(string Scene);
-record CaptionRequest(List<string> Artworks);
+record SyntheticPreview(SyntheticRequest Options, string Artwork, double T);
 
 public partial class Program { }

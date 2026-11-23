@@ -59,8 +59,16 @@ output { float: right; color: var(--ink); }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .progress { height: 14px; background: var(--line); border-radius: 7px; overflow: hidden; }
-#bar { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.progress > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 #errList { margin: 0; padding-left: 18px; font-size: 12px; color: var(--danger); }
 code { background: #8882; padding: 1px 4px; border-radius: 3px; }
-button.aiBtn.off { opacity: .45; }
 @media (max-width: 1000px) { .panel { grid-template-columns: 1fr; height: auto; } #canvasWrap { height: 60vh; } }
+
+.wideCard { grid-column: 1 / -1; }
+
+/* generate: scene table with Images / Videos columns */
+.genGrid { display: grid; grid-template-columns: 1fr 96px 96px; gap: 8px; align-items: center; padding: 3px 0; }
+.genGrid input[type=checkbox] { justify-self: center; }
+.genHead { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.genHead span { text-align: center; font-size: 13px; }
+button.mini { padding: 1px 8px; font-size: 12px; margin: 2px 2px 0; }

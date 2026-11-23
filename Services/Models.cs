@@ -47,15 +47,9 @@ public class AppConfig
 {
     /// <summary>Empty = <c>data/artworks</c> inside the data directory.</summary>
     public string ArtworkFolder { get; set; } = "";
-    public string AiModel { get; set; } = "claude-sonnet-5-5";
     public int JpegQuality { get; set; } = 92;
     /// <summary>Maximum size of each generated image in bytes (0 = unlimited). Default 2 MB.</summary>
     public long MaxOutputBytes { get; set; } = 2_000_000;
-    public string CaptionPrompt { get; set; } =
-        "You write product copy for a small online store selling decorative framed art prints. " +
-        "Store name: <YOUR STORE NAME>. Tone: warm, modern and inviting. Write in Brazilian Portuguese. " +
-        "Title: a short product title (max 60 characters). " +
-        "Caption: an Instagram caption of 2-3 short sentences with a call to action, followed by 8-12 relevant hashtags.";
 }
 
 public static class Names

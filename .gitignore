@@ -5,3 +5,8 @@ data/.cache/
 data/output/
 *.tmp
 .vs/
+
+# ffmpeg is a local download (over GitHub's 100 MB file limit); old Midjourney video folders are unused
+ffmpeg.exe
+data/videos-in/
+data/videos-out/

@@ -200,6 +200,8 @@ public sealed class SceneImageCache(SceneStore scenes)
     }
 }
 
+public record RenameItem(string From, string To);
+
 public record ArtworkInfo(string File, string Stem, int Width, int Height, long Bytes, string? Error);
 
 public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
@@ -263,6 +265,40 @@ public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
                 return new ArtworkInfo(fi.Name, Path.GetFileNameWithoutExtension(fi.Name), 0, 0, fi.Length, ex.Message);
             }
         });
+    }
+
+    static readonly System.Text.RegularExpressions.Regex FourDigits = new(@"^\d{4}$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Renames every artwork whose name is not exactly four digits (0001.png) to the next free numbers after the highest
+    /// existing one (e.g. 0048, 0049, ...), oldest file first. Already-numbered files are never touched.
+    /// With <paramref name="dryRun"/> nothing is renamed and the plan is returned. Renames are appended to artworks-rename-map.csv.
+    /// </summary>
+    public List<RenameItem> NormalizeNames(bool dryRun)
+    {
+        var files = Files().ToList();
+        bool Ok(string f) => FourDigits.IsMatch(Path.GetFileNameWithoutExtension(f));
+        int next = files.Where(Ok).Select(f => int.Parse(Path.GetFileNameWithoutExtension(f))).DefaultIfEmpty(0).Max();
+        var todo = files.Where(f => !Ok(f))
+            .OrderBy(f => File.GetCreationTimeUtc(f)).ThenBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+
+        var plan = new List<RenameItem>();
+        foreach (var f in todo)
+        {
+            do { next++; } while (next <= 9999 && Directory.EnumerateFiles(Folder, $"{next:0000}.*").Any());
+            if (next > 9999) throw new InvalidOperationException("No free four-digit numbers left (0001-9999).");
+            plan.Add(new RenameItem(Path.GetFileName(f), $"{next:0000}{Path.GetExtension(f).ToLowerInvariant()}"));
+        }
+        if (dryRun || plan.Count == 0) return plan;
+
+        foreach (var item in plan) File.Move(Path.Combine(Folder, item.From), Path.Combine(Folder, item.To));
+
+        var map = Path.Combine(paths.DataDir, "artworks-rename-map.csv");
+        var sb = new StringBuilder();
+        if (!File.Exists(map)) sb.AppendLine("\"New\",\"Old\"");
+        foreach (var item in plan) sb.AppendLine($"\"{item.To}\",\"{item.From.Replace("\"", "\"\"")}\"");
+        File.AppendAllText(map, sb.ToString(), new UTF8Encoding(true));
+        return plan;
     }
 
     public string? EnsureThumb(string file)

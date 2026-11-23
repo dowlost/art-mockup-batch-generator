@@ -23,6 +23,18 @@ public class SizeLimitTests
     }
 
     [Fact]
+    public void FullQuality_NoLimit_KeepsResolutionAndIsLarger()
+    {
+        using var img = Noise();
+        var full = ImageIO.EncodeUnderLimit(img, "jpg", 100, 0);
+        Assert.True(full.Length > 2_000_000);
+        using var back = Cv2.ImDecode(full, ImreadModes.Color);
+        Assert.Equal(img.Width, back.Width);
+        Assert.Equal(img.Height, back.Height);
+        Assert.True(full.Length > ImageIO.Encode(img, "jpg", 92).Length);
+    }
+
+    [Fact]
     public void SmallImage_KeepsRequestedQuality()
     {
         using var img = new Mat(200, 200, MatType.CV_8UC3, new Scalar(10, 20, 30));
