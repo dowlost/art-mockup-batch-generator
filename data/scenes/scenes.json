@@ -95,20 +95,20 @@
       "image": "cenario1-vertical.png",
       "corners": [
         {
-          "x": 751.2019211778921,
-          "y": 405.1220431252368
+          "x": 469,
+          "y": 234
         },
         {
-          "x": 1304.078625617702,
-          "y": 405.12205195744275
+          "x": 771,
+          "y": 234
         },
         {
-          "x": 1304.560970047876,
-          "y": 1125.279906458022
+          "x": 771,
+          "y": 695
         },
         {
-          "x": 750.6231003543083,
-          "y": 1126.1481476296294
+          "x": 469,
+          "y": 695
         }
       ],
       "settings": {
@@ -125,20 +125,20 @@
       "image": "cenario2-vertical.png",
       "corners": [
         {
-          "x": 730.379474843336,
-          "y": 453.82630374486837
+          "x": 501,
+          "y": 269
         },
         {
-          "x": 1297.5742123247207,
-          "y": 454.0016039273395
+          "x": 746,
+          "y": 269
         },
         {
-          "x": 1297.8698872785533,
-          "y": 1291.9581283769435
+          "x": 746,
+          "y": 644
         },
         {
-          "x": 730.1829947525439,
-          "y": 1292.289603089518
+          "x": 501,
+          "y": 644
         }
       ],
       "settings": {
@@ -155,20 +155,20 @@
       "image": "cenario3-vertical.png",
       "corners": [
         {
-          "x": 730.9062698859465,
-          "y": 453.961722994213
+          "x": 418,
+          "y": 282
         },
         {
-          "x": 1298.5568693007708,
-          "y": 453.81594547542267
+          "x": 766,
+          "y": 282
         },
         {
-          "x": 1298.8378741341119,
-          "y": 1291.6891258616417
+          "x": 766,
+          "y": 806
         },
         {
-          "x": 730.8686558813422,
-          "y": 1291.9737558409663
+          "x": 418,
+          "y": 806
         }
       ],
       "settings": {
@@ -181,7 +181,7 @@
       "expectedAspectRatio": null
     },
     {
-      "name": "jacare",
+      "name": "jacare-horizontal",
       "image": "jacare.jpeg",
       "corners": [
         {
@@ -211,7 +211,7 @@
       "expectedAspectRatio": null
     },
     {
-      "name": "detalhes",
+      "name": "detalhes-horizontal",
       "image": "detalhes.jpeg",
       "corners": [
         {
@@ -237,6 +237,66 @@
         "lightingStrength": 0.8,
         "glareStrength": 0,
         "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "jacare-vertical",
+      "image": "jacare-vertical.png",
+      "corners": [
+        {
+          "x": 201,
+          "y": 165
+        },
+        {
+          "x": 498,
+          "y": 165
+        },
+        {
+          "x": 498,
+          "y": 621
+        },
+        {
+          "x": 201,
+          "y": 621
+        }
+      ],
+      "settings": {
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "edgeFeatherPx": 1,
+        "fitMode": "cover",
+        "glareStrength": 0
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "detalhes-vertical",
+      "image": "detalhes-vertical.png",
+      "corners": [
+        {
+          "x": 507,
+          "y": 185
+        },
+        {
+          "x": 744,
+          "y": 185
+        },
+        {
+          "x": 744,
+          "y": 533
+        },
+        {
+          "x": 507,
+          "y": 533
+        }
+      ],
+      "settings": {
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "edgeFeatherPx": 1,
+        "fitMode": "cover",
+        "glareStrength": 0
       },
       "expectedAspectRatio": null
     }
