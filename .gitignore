@@ -3,6 +3,10 @@ obj/
 .env
 data/.cache/
 data/output/
+
+# artworks are large and stay local; data/artworks-counter.json keeps track of their numbers
+data/artworks/
+
 *.tmp
 .vs/
 
