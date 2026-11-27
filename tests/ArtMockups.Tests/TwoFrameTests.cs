@@ -161,7 +161,26 @@ public class TwoFrameTests
             Assert.DoesNotContain("\"frames\"", json);
 
             var batch = new BatchService(paths, scenes, new SceneImageCache(scenes), library, config);
-            var job = batch.Start(new BatchRequest(["duo"], null, false, "png", true, [new("0001.png", "0002.png"), new("0002.png")]));
+            var request = new BatchRequest(["duo"], null, false, "png", true, [new("0001.png", "0002.png"), new("0003.png")]);
+            // 0003: left half blue, right half yellow
+            using (var art = Solid(Blue, 400, 300))
+            {
+                using (var right = new Mat(art, new Rect(200, 0, 200, 300))) right.SetTo(new Scalar(0, 255, 255));
+                ImageIO.Save(Path.Combine(library.Folder, "0003.png"), art, 90);
+            }
+            var source = Path.Combine(library.Folder, "0003.png");
+
+            // generation needs the split to exist, cut the way the frames are placed
+            Assert.Contains("0003.png (side by side)", Assert.Throws<ArgumentException>(() => batch.Start(request)).Message);
+            DiptychSplit.SplitForScenes(source, library.Folder, SplitLayout.Stacked);
+            Assert.Equal(SplitLayout.Stacked, library.SceneSplit("0003.png")!.Value.Layout);
+            Assert.Throws<ArgumentException>(() => batch.Start(request));
+            var parts = DiptychSplit.SplitForScenes(source, library.Folder, SplitLayout.Side, overwrite: true);
+            Assert.Equal(["0003_part1.png", "0003_part2.png"], parts.Select(p => p.Name));
+            Assert.All(parts, p => Assert.Equal((200, 300), (p.Width, p.Height))); // original pixels, no border
+            Assert.Equal(SplitLayout.Side, library.SceneSplit("0003.png")!.Value.Layout);
+
+            var job = batch.Start(request);
             for (int i = 0; i < 200 && job.Status == "running"; i++) await Task.Delay(50);
 
             Assert.Equal("completed", job.Status);
@@ -169,7 +188,19 @@ public class TwoFrameTests
             using var pair = ImageIO.Load(Path.Combine(paths.OutputDir, "0001+0002__duo.png"));
             AssertColour(Red, pair, 225, 290);
             AssertColour(Green, pair, 725, 290);
-            Assert.True(File.Exists(Path.Combine(paths.OutputDir, "0002-split__duo.png")));
+            using var split = ImageIO.Load(Path.Combine(paths.OutputDir, "0003-split__duo.png"));
+            AssertColour(Blue, split, 225, 290);
+            AssertColour(Yellow, split, 725, 290);
+
+            // the part files are what gets shown, with part 1 on the left even if frame 1 was marked on the right
+            using (var green = Solid(Green, 200, 300)) ImageIO.Save(Path.Combine(library.Folder, "0003_part1.png"), green, 90);
+            var swapped = new SceneStore(paths).Get("duo");
+            (swapped.Corners, swapped.Corners2) = (swapped.Corners2, swapped.Corners);
+            using var photo = ImageIO.Load(scenes.ImagePath(swapped));
+            using var mockup = PreparedMockup.Create(photo, swapped);
+            using var shown = mockup.Render(library, new ArtPair("0003.png"), requireSplit: true);
+            AssertColour(Green, shown, 225, 290);
+            AssertColour(Yellow, shown, 725, 290);
         }
         finally
         {

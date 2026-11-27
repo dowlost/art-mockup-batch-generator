@@ -214,25 +214,26 @@ public record RenameItem(string From, string To);
 public record ArtworkInfo(string File, string Stem, int Width, int Height, long Bytes, string? Error);
 
 /// <summary>
-/// The print files written next to an artwork: 0001_print (the whole art), or 0001_part1 (left or top) and
-/// 0001_part2 when it is split.
+/// Files the app writes next to an artwork. For the scenes: 0001_part1 (left or top) and 0001_part2, a plain cut.
+/// For printing: 0001_print, or 0001_print_part1 and 0001_print_part2, with a white border.
 /// </summary>
-public static class PrintFiles
+public static class DerivedFiles
 {
-    public const string Full = "print";
-    public static readonly string[] Halves = ["part1", "part2"];
+    public static readonly string[] SceneParts = ["part1", "part2"];
+    public static readonly string[] PrintFull = ["print"];
+    public static readonly string[] PrintParts = ["print_part1", "print_part2"];
 
     static readonly System.Text.RegularExpressions.Regex Pattern =
-        new(@"^(.+)_(part[12]|print)$", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        new(@"^(.+?)_(print_part[12]|print|part[12])$", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     public static string FileName(string stem, string suffix, string ext) => $"{stem}_{suffix}.{ext}";
 
-    public static bool IsPrintFile(string stem) => Pattern.IsMatch(stem);
+    public static bool IsDerived(string stem) => Pattern.IsMatch(stem);
 
-    /// <summary>"0001_part2" and "0001_print" give "0001"; other names are returned unchanged.</summary>
+    /// <summary>"0001_part2" and "0001_print_part1" give "0001"; other names are returned unchanged.</summary>
     public static string BaseStem(string stem) => Pattern.Match(stem) is { Success: true } m ? m.Groups[1].Value : stem;
 
-    /// <summary>Full paths of these print files of an artwork that are already in the folder, in any image format.</summary>
+    /// <summary>Full paths of these files of an artwork that are already in the folder, in any image format.</summary>
     public static List<string> Existing(string folder, string stem, IEnumerable<string> suffixes)
     {
         if (!Directory.Exists(folder)) return [];
@@ -292,7 +293,23 @@ public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
         }
     }
 
-    static string NumberPart(string file) => PrintFiles.BaseStem(Path.GetFileNameWithoutExtension(file));
+    /// <summary>
+    /// The split of an artwork used by two-frame scenes (0001_part1 and 0001_part2) and how it was cut, or null if the
+    /// artwork is not split. Portrait halves were cut side by side, landscape halves top and bottom.
+    /// </summary>
+    public (string Part1, string Part2, SplitLayout Layout)? SceneSplit(string artworkFile)
+    {
+        var found = DerivedFiles.Existing(Folder, Path.GetFileNameWithoutExtension(artworkFile), DerivedFiles.SceneParts);
+        string? Pick(string suffix) => found
+            .Where(f => Path.GetFileNameWithoutExtension(f).EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(f => !f.EndsWith(".png", StringComparison.OrdinalIgnoreCase)).FirstOrDefault();
+        if (Pick("part1") is not { } part1 || Pick("part2") is not { } part2) return null;
+        var info = GetInfo(part1);
+        if (info.Error != null) return null;
+        return (part1, part2, info.Width > info.Height ? SplitLayout.Stacked : SplitLayout.Side);
+    }
+
+    static string NumberPart(string file) => DerivedFiles.BaseStem(Path.GetFileNameWithoutExtension(file));
 
     static int HighestNumber(IEnumerable<string> files) =>
         files.Select(NumberPart).Where(s => FourDigits.IsMatch(s)).Select(int.Parse).DefaultIfEmpty(0).Max();
@@ -343,9 +360,9 @@ public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
     /// <summary>
     /// Renames every artwork whose name is not exactly four digits (0001.png) to the next numbers after the highest one
     /// ever used (in the folder or in the counter file, so numbers are not reused), oldest file first. Already-numbered
-    /// files and their print files (0001_part1, 0001_print) are never touched; the print files of a renamed artwork get
-    /// its new number. With <paramref name="dryRun"/> nothing is renamed and the plan is returned. Renames are appended
-    /// to artworks-rename-map.csv.
+    /// files and the files derived from them (0001_part1, 0001_print) are never touched; the derived files of a renamed
+    /// artwork get its new number. With <paramref name="dryRun"/> nothing is renamed and the plan is returned. Renames
+    /// are appended to artworks-rename-map.csv.
     /// </summary>
     public List<RenameItem> NormalizeNames(bool dryRun)
     {
@@ -356,7 +373,7 @@ public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
             $"{Path.GetFileName(paths.CounterJson)} cannot be read. Fix it (for example after a merge conflict) before renaming.");
         int next = Math.Max(last, HighestNumber(files));
         var todo = files.Where(f => !Ok(f))
-            .OrderBy(f => PrintFiles.IsPrintFile(Stem(f))) // artworks first, so that their print files can follow them
+            .OrderBy(f => DerivedFiles.IsDerived(Stem(f))) // artworks first, so that their parts and prints can follow them
             .ThenBy(f => File.GetCreationTimeUtc(f)).ThenBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
 
         var plan = new List<RenameItem>();
@@ -364,15 +381,15 @@ public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
         foreach (var f in todo)
         {
             var stem = Stem(f);
-            var baseStem = PrintFiles.BaseStem(stem);
-            if (!PrintFiles.IsPrintFile(stem) || !numbers.TryGetValue(baseStem, out var number))
+            var baseStem = DerivedFiles.BaseStem(stem);
+            if (!DerivedFiles.IsDerived(stem) || !numbers.TryGetValue(baseStem, out var number))
             {
                 do { next++; } while (next <= 9999 && Directory.EnumerateFiles(Folder, $"{next:0000}.*").Any());
                 if (next > 9999) throw new InvalidOperationException("No free four-digit numbers left (0001-9999).");
                 number = next;
                 numbers.TryAdd(baseStem, number);
             }
-            var suffix = stem[baseStem.Length..].ToLowerInvariant(); // "", "_part1", "_part2" or "_print"
+            var suffix = stem[baseStem.Length..].ToLowerInvariant(); // "" or "_part1", "_print", "_print_part2", ...
             plan.Add(new RenameItem(Path.GetFileName(f), $"{number:0000}{suffix}{Path.GetExtension(f).ToLowerInvariant()}"));
         }
         if (dryRun || plan.Count == 0) return plan;

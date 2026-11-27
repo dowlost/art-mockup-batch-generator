@@ -24,8 +24,9 @@ Videos need **ffmpeg**: put `ffmpeg.exe` next to the app, install it (`winget in
    Files are named `0001.png`, `0002.png`, … The **Rename new artworks to 0000** button renames every file that is not
    already four digits to the next numbers (e.g. after `0047`, new files become `0048`, `0049`, …; oldest first) and
    records the old names in `data/artworks-rename-map.csv`.
-3. **Generate** – one list of scenes with two columns: tick a scene under **Images** for still mockups and/or under
-   **Videos** for the zoom video. Press **Generate**. Everything goes into one flat folder, `data/output/`:
+3. **Generate** – one list of scenes: tick a scene under **Images** for still mockups and/or under **Videos** for the
+   zoom video. One-frame scenes, side-by-side two-frame scenes and top-and-bottom two-frame scenes cannot be mixed:
+   ticking one kind disables the others. Press **Generate**. Everything goes into one flat folder, `data/output/`:
    `0001__<scene>.jpg` and `0001__<scene>.mp4` (the video adds `_loop` when the zoom-back-out option is on).
    Existing files are skipped unless *Overwrite* is on. Failures are listed and never stop the batch.
 
@@ -40,21 +41,23 @@ another computer. Commit it together with the rename map.
 
 ### Two-frame scenes
 
-Scenes with 2 frames don't use the ticked artworks. Instead, add one or more **Two-frame pairs** on the Generate tab:
-an artwork for each frame, or *Split Frame 1 artwork across both* to show a diptych (left/top half goes to the left/top
-frame, with the same centred cut as the print export). Each pair gives one image and/or video per scene, named
-`0001+0002__<scene>` or `0001-split__<scene>`. The zoom video ends on the area covering both frames.
+Each ticked artwork is shown split across both frames. If it is not split yet, the Generate tab shows how it will be
+cut; adjust *Crop position* if needed and press **Confirm split**, then **Generate**. This is a plain cut (no upscaling,
+no border) saved in the artworks folder as `0001_part1` (left or top) and `0001_part2`. One split exists per artwork:
+switching between side-by-side and top-and-bottom scenes cuts it again and replaces the parts (tick *Overwrite* to
+re-render existing outputs). **Custom pairs** put two different artworks in the two frames. Outputs are named
+`0001-split__<scene>` or `0001+0002__<scene>`. The zoom video ends on the area covering both frames.
 
 ### Print files
 
-The **Print files** tab prepares an artwork for printing and saves the result in the artworks folder, keeping the
-artwork's name:
+The **Print files** tab prepares an original artwork (a numbered file such as `0001.png`) for printing and saves the
+result in the artworks folder, keeping the artwork's name. Upscaling and the white border happen only here:
 
 | Layout | Files | Art on each print | File size with border |
 |---|---|---|---|
 | Not split | `0001_print` | 60×90 cm portrait, 90×60 cm landscape | 61×91 / 91×61 cm |
-| Side by side (whole art 4:3) | `0001_part1`, `0001_part2` | two 60×90 cm | 61×91 cm each |
-| Top and bottom (whole art 3:4) | `0001_part1`, `0001_part2` | two 90×60 cm | 91×61 cm each |
+| Side by side (whole art 4:3) | `0001_print_part1`, `0001_print_part2` | two 60×90 cm | 61×91 cm each |
+| Top and bottom (whole art 3:4) | `0001_print_part1`, `0001_print_part2` | two 90×60 cm | 91×61 cm each |
 
 - Every print gets a **0.5 cm white border** on each side, as room for positioning, cutting and framing.
 - The artwork is cropped to the layout's shape (centred; *Crop position* moves the cut).
@@ -64,8 +67,8 @@ artwork's name:
 - A plain resize cannot add detail. The tab warns when the artwork has less than 150 DPI of real detail at print size.
 - On a 24-inch (609.6 mm) roll, a 61 cm wide file shows about 4.8 mm of white on each side. Print at 100% size.
 - No allowance is made for the gap between two frames.
-- Print files are ordinary artworks afterwards. The rename button leaves them alone. Exporting again asks first, then
-  replaces them. Mockups of a print file include its white border; use the original artwork for mockups.
+- Print files and scene parts are not listed as artworks in the app; only originals can be ticked or picked. The rename
+  button leaves them alone. Exporting again asks first, then replaces them.
 
 #### AI upscale (Upscayl)
 

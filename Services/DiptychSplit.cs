@@ -110,30 +110,47 @@ public static class DiptychSplit
         return result;
     }
 
-    static string[] Suffixes(SplitLayout layout) => layout == SplitLayout.Full ? [PrintFiles.Full] : PrintFiles.Halves;
+    public static string[] PrintSuffixes(SplitLayout layout) =>
+        layout == SplitLayout.Full ? DerivedFiles.PrintFull : DerivedFiles.PrintParts;
 
     /// <summary>
-    /// Writes the print file(s): &lt;name&gt;_print, or &lt;name&gt;_part1 (left or top) and &lt;name&gt;_part2. Each gets
-    /// a white border. With dpi 0 no pixel of the art is resampled. Otherwise the whole crop is resized once and then
-    /// cut, so the two sides of a seam match exactly. Bit depth and the embedded colour profile are kept.
+    /// Writes the print file(s): &lt;name&gt;_print, or &lt;name&gt;_print_part1 (left or top) and
+    /// &lt;name&gt;_print_part2. Each gets a white border. With dpi 0 no pixel of the art is resampled. Otherwise the
+    /// whole crop is resized once and then cut, so the two sides of a seam match exactly. Bit depth and the embedded
+    /// colour profile are kept.
     /// </summary>
     /// <param name="upscale">
     /// Optional AI upscaler. Used only when the print needs more pixels than the crop has: it enlarges the whole crop,
     /// and the result is then resized to the print size. The caller's function returns a new image.
     /// </param>
     /// <param name="overwrite">
-    /// Required when these print files already exist. They are replaced, including ones in another format.
+    /// Required when these files already exist. They are replaced, including ones in another format.
     /// </param>
     public static List<SplitFile> Export(string sourcePath, string outDir, SplitLayout layout, double offset, int dpi, string format,
         Func<Mat, Mat>? upscale = null, bool overwrite = false)
     {
         var ext = (format ?? "").ToLowerInvariant();
         if (ext is not ("png" or "jpg")) throw new ArgumentException("Format must be png or jpg.");
+        return Write(sourcePath, outDir, layout, offset, dpi, ext, upscale, overwrite, PrintSuffixes(layout), border: true);
+    }
+
+    /// <summary>
+    /// Cuts an artwork for a two-frame scene into &lt;name&gt;_part1 and &lt;name&gt;_part2: the original pixels as PNG,
+    /// with no upscaling and no border.
+    /// </summary>
+    public static List<SplitFile> SplitForScenes(string sourcePath, string outDir, SplitLayout layout, double offset = 0.5, bool overwrite = false)
+    {
+        if (layout == SplitLayout.Full) throw new ArgumentException("A scene split is side by side or top and bottom.");
+        return Write(sourcePath, outDir, layout, offset, 0, "png", null, overwrite, DerivedFiles.SceneParts, border: false);
+    }
+
+    static List<SplitFile> Write(string sourcePath, string outDir, SplitLayout layout, double offset, int dpi, string ext,
+        Func<Mat, Mat>? upscale, bool overwrite, string[] suffixes, bool border)
+    {
         var stem = Path.GetFileNameWithoutExtension(sourcePath);
-        if (PrintFiles.IsPrintFile(stem))
-            throw new ArgumentException($"'{Path.GetFileName(sourcePath)}' is already a print file. Pick the original artwork.");
-        var suffixes = Suffixes(layout);
-        var old = PrintFiles.Existing(outDir, stem, suffixes);
+        if (DerivedFiles.IsDerived(stem))
+            throw new ArgumentException($"'{Path.GetFileName(sourcePath)}' is a part or print file. Pick the original artwork.");
+        var old = DerivedFiles.Existing(outDir, stem, suffixes);
         if (old.Count > 0 && !overwrite)
             throw new InvalidOperationException($"Already there: {string.Join(", ", old.Select(Path.GetFileName))}. Confirm replacing them.");
 
@@ -167,7 +184,8 @@ public static class DiptychSplit
         if (ext == "jpg" && whole.Depth() == MatType.CV_16U) whole.ConvertTo(whole, MatType.CV_8UC3, 1 / 257.0);
 
         // Tagged so that the file opens at exactly the print size, border included (JPEG can only store whole numbers).
-        double dpiX = plan.FileWidth / (plan.FileCmWidth / 2.54), dpiY = plan.FileHeight / (plan.FileCmHeight / 2.54);
+        double dpiX = border ? plan.FileWidth / (plan.FileCmWidth / 2.54) : plan.PieceWidth / (plan.PieceCmWidth / 2.54);
+        double dpiY = border ? plan.FileHeight / (plan.FileCmHeight / 2.54) : plan.PieceHeight / (plan.PieceCmHeight / 2.54);
 
         // Every file is encoded before anything on disk changes.
         var prints = new List<(SplitFile File, byte[] Bytes)>();
@@ -175,10 +193,10 @@ public static class DiptychSplit
         for (int i = 0; i < views.Length; i++)
         {
             using var view = views[i];
-            using var bordered = AddBorder(view, plan.Border);
-            var bytes = PrintMetadata.Apply(ImageIO.Encode(bordered, ext, 100), dpiX, dpiY, icc);
-            var name = PrintFiles.FileName(stem, suffixes[i], ext);
-            prints.Add((new SplitFile(name, bordered.Width, bordered.Height, bytes.LongLength), bytes));
+            using var piece = AddBorder(view, border ? plan.Border : 0);
+            var bytes = PrintMetadata.Apply(ImageIO.Encode(piece, ext, 100), dpiX, dpiY, icc);
+            var name = DerivedFiles.FileName(stem, suffixes[i], ext);
+            prints.Add((new SplitFile(name, piece.Width, piece.Height, bytes.LongLength), bytes));
         }
         foreach (var (file, bytes) in prints) ImageIO.WriteAtomic(Path.Combine(outDir, file.Name), bytes);
         // Files left over from an earlier export in another format would be duplicates of the new ones.
@@ -204,11 +222,10 @@ public sealed class SplitService(ArtworkLibrary library, Upscayl upscayl)
         var art = library.Info(r.Artwork);
         var layout = DiptychSplit.ParseLayout(r.Layout);
         var plan = DiptychSplit.Plan(art.Width, art.Height, layout, r.Offset ?? 0.5, r.Dpi ?? 0);
-        var suffixes = layout == SplitLayout.Full ? new[] { PrintFiles.Full } : PrintFiles.Halves;
         bool aiAvailable = Upscayl.Find() != null;
         return new
         {
-            existing = PrintFiles.Existing(library.Folder, art.Stem, suffixes).Select(Path.GetFileName), // would be replaced
+            existing = DerivedFiles.Existing(library.Folder, art.Stem, DiptychSplit.PrintSuffixes(layout)).Select(Path.GetFileName), // would be replaced
             aiAvailable, usesAi = aiAvailable && (r.Ai ?? true) && plan.NeedsEnlarging,
             aiDpi = Math.Min(plan.SourceDpi * Upscayl.Factor, plan.Dpi),
             sourceWidth = art.Width, sourceHeight = art.Height,
@@ -221,23 +238,40 @@ public sealed class SplitService(ArtworkLibrary library, Upscayl upscayl)
     }
 
     /// <summary>JPEG showing the print(s) with their white border, two pieces with a gap between them.</summary>
-    public byte[] Preview(SplitRequest r)
+    public byte[] Preview(SplitRequest r) =>
+        Picture(r.Artwork, DiptychSplit.ParseLayout(r.Layout), r.Offset ?? 0.5, maxSide: 700, border: true);
+
+    /// <summary>JPEG showing how a scene split would cut an artwork (no border).</summary>
+    public byte[] CutPreview(string artwork, string layout, double offset) =>
+        Picture(artwork, DiptychSplit.ParseLayout(layout), offset, maxSide: 260, border: false);
+
+    /// <summary>Writes the part files used by two-frame scenes.</summary>
+    public object Cut(SplitRequest r)
     {
-        var layout = DiptychSplit.ParseLayout(r.Layout);
-        using var art = ImageIO.Load(library.Resolve(r.Artwork));
-        var plan = DiptychSplit.Plan(art.Width, art.Height, layout, r.Offset ?? 0.5);
+        var source = library.Resolve(r.Artwork);
+        lock (_exportLock)
+        {
+            var files = DiptychSplit.SplitForScenes(source, library.Folder, DiptychSplit.ParseLayout(r.Layout), r.Offset ?? 0.5, r.Overwrite);
+            return new { files };
+        }
+    }
+
+    byte[] Picture(string artwork, SplitLayout layout, double offset, int maxSide, bool border)
+    {
+        using var art = ImageIO.Load(library.Resolve(artwork));
+        var plan = DiptychSplit.Plan(art.Width, art.Height, layout, offset);
         var shown = DiptychSplit.Pieces(art, plan).Select(piece =>
         {
             using (piece)
             {
-                using var small = ImageIO.ResizeToMaxSide(piece, layout == SplitLayout.Full ? 1200 : 700);
-                return DiptychSplit.AddBorder(small, (int)Math.Round(small.Width * DiptychSplit.BorderCm / plan.PieceCmWidth));
+                using var small = ImageIO.ResizeToMaxSide(piece, layout == SplitLayout.Full ? maxSide * 12 / 7 : maxSide);
+                return DiptychSplit.AddBorder(small, border ? (int)Math.Round(small.Width * DiptychSplit.BorderCm / plan.PieceCmWidth) : 0);
             }
         }).ToList();
         try
         {
             if (shown.Count == 1) return ImageIO.Encode(shown[0], ".jpg", 90);
-            const int gap = 24;
+            int gap = Math.Max(6, maxSide / 30);
             bool side = layout == SplitLayout.Side;
             using var spacer = new Mat(side ? shown[0].Height : gap, side ? gap : shown[0].Width, MatType.CV_8UC3, new Scalar(17, 17, 17));
             using var both = new Mat();

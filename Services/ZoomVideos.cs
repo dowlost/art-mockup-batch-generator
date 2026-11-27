@@ -153,6 +153,7 @@ public sealed class ZoomVideoService(AppPaths paths, ArtworkLibrary library, Sce
         if (names.Count == 0) throw new ArgumentException("Select at least one scene for the videos.");
         var sceneList = names.Select(scenes.Get).ToList();
         var items = MockupPlan.Build(sceneList, req.Artworks, req.Pairs);
+        MockupPlan.RequireSplits(library, items);
         double seconds = req.Seconds ?? 5; int fps = req.Fps ?? 24;
         if (seconds is < 1 or > 15) throw new ArgumentException("Duration must be between 1 and 15 seconds.");
         if (fps is < 12 or > 60) throw new ArgumentException("Frame rate must be between 12 and 60.");
@@ -189,7 +190,7 @@ public sealed class ZoomVideoService(AppPaths paths, ArtworkLibrary library, Sce
                         try
                         {
                             Directory.CreateDirectory(tmpDir);
-                            using var composite = prepared.Render(library, art);
+                            using var composite = prepared.Render(library, art, requireSplit: true);
                             var po = new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 2, 1, 4), CancellationToken = job.Cts.Token };
                             await Parallel.ForAsync(0, frameCount, po, (i, ct) =>
                             {

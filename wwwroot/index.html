@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Art Mockup Batch Generator</title>
-  <link rel="stylesheet" href="styles.css?v=20261127b">
+  <link rel="stylesheet" href="styles.css?v=20261127e">
 </head>
 <body>
   <header>
@@ -96,17 +96,24 @@
     <div class="cards">
       <section class="card wideCard">
         <h2>Generate</h2>
-        <p class="muted small">Tick the scenes for the still images and, separately, the scenes for the zoom videos. Everything uses the artworks selected in the Artworks tab and is saved in one folder as <code>0001__scene.jpg</code> / <code>0001__scene.mp4</code>.</p>
+        <p class="muted small">Tick the scenes for the still images and, separately, the scenes for the zoom videos. One-frame scenes, side-by-side scenes and top-and-bottom scenes cannot be mixed in one run. Everything uses the artworks selected in the Artworks tab and is saved in one folder as <code>0001__scene.jpg</code> / <code>0001__scene.mp4</code>.</p>
 
         <div class="genGrid genHead">
+          <span>Images<br><button id="btnScAll" type="button" class="mini" title="All scenes of the ticked type (one-frame scenes if nothing is ticked)">All</button><button id="btnScNone" type="button" class="mini">None</button></span>
+          <span>Videos<br><button id="btnVidScAll" type="button" class="mini" title="All scenes of the ticked type (one-frame scenes if nothing is ticked)">All</button><button id="btnVidScNone" type="button" class="mini">None</button></span>
           <strong>Scenes</strong>
-          <span>Images<br><button id="btnScAll" type="button" class="mini">All</button><button id="btnScNone" type="button" class="mini">None</button></span>
-          <span>Videos<br><button id="btnVidScAll" type="button" class="mini">All</button><button id="btnVidScNone" type="button" class="mini">None</button></span>
         </div>
-        <div id="genScenes" class="stack"></div>
+        <div id="genScenes"></div>
+        <div id="splitBox" class="stack" hidden>
+          <h3>Split artworks for the two-frame scenes</h3>
+          <p id="splitHelp" class="muted small"></p>
+          <label id="resplitRow" class="inline"><input type="checkbox" id="chkResplit"> Show artworks that are already split (to cut them again)</label>
+          <div id="splitList" class="splitList"></div>
+          <div class="row"><button id="btnCut" class="primary" type="button">Confirm split</button> <span id="splitProgress" class="muted small"></span></div>
+        </div>
         <div id="pairBox" class="stack" hidden>
-          <h3>Two-frame pairs</h3>
-          <p class="muted small">Used by the scenes with 2 frames: each pair makes one image (and video) per ticked scene. Choose an artwork for each frame, or split the Frame 1 artwork across both.</p>
+          <h3>Custom pairs (optional)</h3>
+          <p class="muted small">Two different artworks, one per frame. Each pair makes one more image (and video) per ticked two-frame scene.</p>
           <div id="pairList" class="stack"></div>
           <div class="row"><button id="btnAddPair" type="button">Add pair</button></div>
         </div>
@@ -165,7 +172,7 @@
     <div class="cards">
       <section class="card wideCard">
         <h2>Print files</h2>
-        <p class="muted small">Prepares an artwork for printing: the whole art as one print, or cut into two prints for two frames. Every print gets a 0.5 cm white border, so a 60×90 cm art is a 61×91 cm file. Saved in the artworks folder as <code>0001_print</code>, or <code>0001_part1</code> (left or top) and <code>0001_part2</code>; the artwork itself is not modified.</p>
+        <p class="muted small">Prepares an original artwork for printing: the whole art as one print, or cut into two prints for two frames, optionally upscaled. Every print gets a 0.5 cm white border, so a 60×90 cm art is a 61×91 cm file. Saved in the artworks folder as <code>0001_print</code>, or <code>0001_print_part1</code> (left or top) and <code>0001_print_part2</code>; the artwork itself is not modified.</p>
         <div class="row">
           <label class="inline">Artwork <select id="spArt"></select></label>
           <label class="inline">Layout
@@ -192,6 +199,6 @@
     </div>
   </main>
 
-<script src="app.js?v=20261127d"></script>
+<script src="app.js?v=20261127e"></script>
 </body>
 </html>

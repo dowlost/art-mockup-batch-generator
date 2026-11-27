@@ -44,6 +44,7 @@ public sealed class BatchService(AppPaths paths, SceneStore scenes, SceneImageCa
 
         var sceneList = req.Scenes.Distinct(StringComparer.OrdinalIgnoreCase).Select(scenes.Get).ToList();
         var items = MockupPlan.Build(sceneList, req.Artworks, req.Pairs);
+        MockupPlan.RequireSplits(library, items);
 
         var job = new BatchJob { Total = items.Count };
         _jobs[job.Id] = job;
@@ -75,7 +76,7 @@ public sealed class BatchService(AppPaths paths, SceneStore scenes, SceneImageCa
                             Interlocked.Increment(ref job.Skipped);
                             return ValueTask.CompletedTask;
                         }
-                        using var result = prepared[scene.Name].Value.Render(library, art);
+                        using var result = prepared[scene.Name].Value.Render(library, art, requireSplit: true);
                         ImageIO.Save(outPath, result, quality, maxBytes);
                         Interlocked.Increment(ref job.Rendered);
                     }

@@ -46,7 +46,7 @@ public sealed class UpscaleTests : IDisposable
         var files = DiptychSplit.Export(source, OutDir, SplitLayout.Side, 0.5, 150, "png", m => { calls.Add(m.Size()); return Fake(m); });
 
         Assert.Equal([new Size(400, 300)], calls);
-        Assert.Equal("0001_part1.png", files[0].Name);
+        Assert.Equal("0001_print_part1.png", files[0].Name);
         using var art = ImageIO.Load(source);
         using var big = Fake(art);
         using var expected = new Mat();

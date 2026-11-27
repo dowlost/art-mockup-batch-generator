@@ -117,7 +117,7 @@ public sealed class DiptychSplitTests : IDisposable
         var before = File.ReadAllBytes(source);
         var files = DiptychSplit.Export(source, OutDir, layout, 0.5, 0, "png");
 
-        Assert.Equal(["0001_part1.png", "0001_part2.png"], files.Select(f => f.Name));
+        Assert.Equal(["0001_print_part1.png", "0001_print_part2.png"], files.Select(f => f.Name));
         using var art = ImageIO.Load(source);
         var plan = DiptychSplit.Plan(1000, 700, layout);
         using var expected = new Mat(art, plan.Crop);
@@ -135,17 +135,17 @@ public sealed class DiptychSplitTests : IDisposable
     {
         var source = Source("0007.png", 400, 300);
         var original = File.ReadAllBytes(source);
-        var unrelated = Source("00070_part1.png", 40, 30); // another artwork's half must survive
+        var unrelated = Source("00070_print_part1.png", 40, 30); // another artwork's half must survive
         DiptychSplit.Export(source, _dir, SplitLayout.Side, 0.5, 0, "png");
-        var part1 = Path.Combine(_dir, "0007_part1.png");
+        var part1 = Path.Combine(_dir, "0007_print_part1.png");
         var first = File.ReadAllBytes(part1);
 
         var refused = Assert.Throws<InvalidOperationException>(() => DiptychSplit.Export(source, _dir, SplitLayout.Stacked, 0.5, 0, "png"));
-        Assert.Contains("0007_part1.png", refused.Message);
+        Assert.Contains("0007_print_part1.png", refused.Message);
         Assert.Equal(first, File.ReadAllBytes(part1));
 
         DiptychSplit.Export(source, _dir, SplitLayout.Stacked, 0.5, 0, "jpg", overwrite: true);
-        Assert.Equal(["0007.png", "00070_part1.png", "0007_part1.jpg", "0007_part2.jpg"],
+        Assert.Equal(["0007.png", "00070_print_part1.png", "0007_print_part1.jpg", "0007_print_part2.jpg"],
             Directory.GetFiles(_dir).Select(f => Path.GetFileName(f)).Order(StringComparer.Ordinal));
         Assert.Equal(original, File.ReadAllBytes(source));
         Assert.True(File.Exists(unrelated));
@@ -154,6 +154,7 @@ public sealed class DiptychSplitTests : IDisposable
     [Theory]
     [InlineData("0007_part2.png", SplitLayout.Side)]
     [InlineData("0007_print.png", SplitLayout.Full)]
+    [InlineData("0007_print_part1.png", SplitLayout.Side)]
     public void APrintFile_IsNotProcessedAgain(string name, SplitLayout layout) =>
         Assert.Throws<ArgumentException>(() => DiptychSplit.Export(Source(name, 400, 300), OutDir, layout, 0.5, 0, "png"));
 
@@ -227,7 +228,7 @@ public sealed class DiptychSplitTests : IDisposable
         var source = Source("0002.png", 400, 300);
         var files = DiptychSplit.Export(source, OutDir, SplitLayout.Side, 0.5, 150, "png");
 
-        Assert.Equal("0002_part1.png", files[0].Name);
+        Assert.Equal("0002_print_part1.png", files[0].Name);
         using var art = ImageIO.Load(source);
         using var expected = new Mat();
         Cv2.Resize(art, expected, new Size(3543 * 2, 5315), 0, 0, InterpolationFlags.Lanczos4);

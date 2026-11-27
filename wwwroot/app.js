@@ -29,10 +29,27 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 const sceneReady = s => s.corners.length === 4 && (s.frameCount !== 2 || s.corners2.length === 4);
 const isDuo = name => state.scenes.find(s => s.name === name)?.frameCount === 2;
 const okArtworks = () => state.artworks.filter(a => !a.error);
-/** A file written by the "Print files" tab (0001_print.png, 0001_part1.png). */
-const isPrintFile = file => /._(part[12]|print)\.[^.]+$/i.test(file);
+/** A file the app made from an artwork: 0001_part1 (scene split), 0001_print or 0001_print_part1 (print files). */
+const isDerived = file => /._(print_part[12]|print|part[12])\.[^.]+$/i.test(file);
+/** The original artworks: the only ones that are listed and picked. */
+const rawArtworks = () => okArtworks().filter(a => !isDerived(a.file));
+const stemOf = file => file.replace(/\.[^.]+$/, '').toLowerCase();
+/** 'side' or 'stacked' if the artwork has its two scene parts (by their shape, as the server does), else null. */
+function splitOf(file) {
+  const part = n => okArtworks().filter(a => stemOf(a.file) === `${stemOf(file)}_part${n}`)
+    .sort((a, b) => /\.png$/i.test(b.file) - /\.png$/i.test(a.file))[0];
+  const first = part(1);
+  return first && part(2) ? (first.width > first.height ? 'stacked' : 'side') : null;
+}
+/** 'single', or how the frames of a two-frame scene are placed: 'side' or 'stacked' (same rule as Scene.Arrangement). */
+function sceneKind(s) {
+  if (s.frameCount !== 2) return 'single';
+  const mean = (frame, k) => frame.reduce((t, p) => t + p[k], 0) / frame.length;
+  return Math.abs(mean(s.corners2, 'x') - mean(s.corners, 'x')) >= Math.abs(mean(s.corners2, 'y') - mean(s.corners, 'y')) ? 'side' : 'stacked';
+}
+const KIND_LABEL = { single: 'one frame', side: '2 frames side by side', stacked: '2 frames top and bottom' };
 /** Refills a <select> with artwork files, keeping the current choice. `blank` adds a first option with an empty value. */
-function fillArtSelect(sel, blank, value = sel.value, arts = okArtworks()) {
+function fillArtSelect(sel, blank, value = sel.value, arts = rawArtworks()) {
   sel.innerHTML = '';
   if (blank) sel.add(new Option(blank, ''));
   arts.forEach(a => sel.add(new Option(a.file, a.file)));
@@ -299,8 +316,8 @@ async function renderPreview(sheet = false) {
   } catch (e) { if (seq === pvSeq) { msg.textContent = e.message; img.removeAttribute('src'); } }
 }
 function previewArtworks() {
-  const sel = state.artworks.filter(a => !a.error && state.selected.has(a.file)).map(a => a.file);
-  return sel.length ? sel : state.artworks.filter(a => !a.error).map(a => a.file);
+  const sel = rawArtworks().filter(a => state.selected.has(a.file)).map(a => a.file);
+  return sel.length ? sel : rawArtworks().map(a => a.file);
 }
 $('btnPreview').onclick = () => renderPreview(false);
 $('btnSheet').onclick = () => renderPreview(true);
@@ -324,30 +341,31 @@ async function loadArtworks() {
   let loaded = true;
   try { state.artworks = await api('/artworks'); }
   catch (e) { loaded = false; state.artworks = []; toast(e.message, true); }
-  const valid = new Set(state.artworks.map(a => a.file));
+  const valid = new Set(rawArtworks().map(a => a.file));
   state.selected = new Set([...state.selected].filter(f => valid.has(f)));
-  if (!localStorage.getItem('selectedArtworks')) state.artworks.forEach(a => { if (!a.error) state.selected.add(a.file); });
+  if (!localStorage.getItem('selectedArtworks')) valid.forEach(f => state.selected.add(f));
   persistSelection(); renderArtworks();
   if (loaded) { // drop pairs whose files are gone
-    const ok = new Set(okArtworks().map(a => a.file));
-    pairs = pairs.filter(p => ok.has(p.first) && (!p.second || ok.has(p.second)));
+    pairs = pairs.filter(p => valid.has(p.first) && valid.has(p.second));
     savePairs();
   }
   fillArtSelect($('pvArt'));
   fillArtSelect($('pvArt2'), SPLIT_LABEL);
   const spBefore = $('spArt').value;
-  fillArtSelect($('spArt'), '', spBefore, okArtworks().filter(a => !isPrintFile(a.file))); // print files are not processed again
+  // only the numbered originals (0001.png) can be turned into print files
+  fillArtSelect($('spArt'), '', spBefore, rawArtworks().filter(a => /^\d+\.[^.]+$/.test(a.file)));
   if ($('spArt').value !== spBefore) resetSplitForArtwork();
 }
 function persistSelection() { localStorage.setItem('selectedArtworks', JSON.stringify([...state.selected])); }
 function renderArtworks() {
   const g = $('artGrid'); g.innerHTML = '';
-  for (const a of state.artworks) {
+  for (const a of listedArtworks()) {
     const t = document.createElement('div');
     t.className = 'tile' + (state.selected.has(a.file) ? ' on' : '') + (a.error ? ' bad' : '');
     const img = a.error ? '' : `<img loading="lazy" src="/api/artworks/${encodeURIComponent(a.file)}/thumb" alt="">`;
     t.innerHTML = `${a.error ? '' : '<input type="checkbox">'}${img}<div class="nm"></div>` +
-      (a.error ? '<div class="er"></div>' : `<div class="dm">${a.width}×${a.height}</div>`);
+      (a.error ? '<div class="er"></div>'
+        : `<div class="dm">${a.width}×${a.height}${splitOf(a.file) ? ` · split ${splitOf(a.file) === 'side' ? 'side by side' : 'top/bottom'}` : ''}</div>`);
     t.querySelector('.nm').textContent = a.file; t.querySelector('.nm').title = a.file;
     if (a.error) t.querySelector('.er').textContent = a.error;
     else {
@@ -360,8 +378,10 @@ function renderArtworks() {
   }
   updateArtCount();
 }
-function updateArtCount() { $('artCount').textContent = `${state.selected.size} of ${state.artworks.filter(a => !a.error).length} selected`; }
-$('btnAll').onclick = () => { state.artworks.forEach(a => !a.error && state.selected.add(a.file)); persistSelection(); renderArtworks(); };
+/** What the Artworks tab shows: originals, including unreadable ones. Parts and print files are left out. */
+const listedArtworks = () => state.artworks.filter(a => !isDerived(a.file));
+function updateArtCount() { $('artCount').textContent = `${state.selected.size} of ${rawArtworks().length} selected`; }
+$('btnAll').onclick = () => { rawArtworks().forEach(a => state.selected.add(a.file)); persistSelection(); renderArtworks(); };
 $('btnNone').onclick = () => { state.selected.clear(); persistSelection(); renderArtworks(); };
 $('btnReload').onclick = guard(loadArtworks);
 $('btnFolder').onclick = guard(async () => {
@@ -372,14 +392,29 @@ $('btnFolder').onclick = guard(async () => {
 });
 
 // ---------- generate (still images + zoom videos in one flow) ----------
-const genOff = new Set(); // scenes unticked for images (default: every ready scene is ticked)
-let vidOn = new Set(); // scenes ticked for videos (default: none, videos are slower)
-try { vidOn = new Set(JSON.parse(localStorage.getItem('videoScenes') || '[]')); } catch { /* ignore */ }
-const saveVidOn = () => { try { localStorage.setItem('videoScenes', JSON.stringify([...vidOn])); } catch { /* ignore */ } };
-const pickedScenes = () => state.scenes.filter(s => sceneReady(s) && !genOff.has(s.name)).map(s => s.name);
+// All ticked scenes (images and videos together) are of one kind: one frame, two frames side by side, or two frames
+// top and bottom. The other kinds are disabled until everything of the first kind is unticked.
+const loadTicks = key => { try { return new Set(JSON.parse(localStorage.getItem(key) || '[]')); } catch { return new Set(); } };
+const imgOn = loadTicks('imageScenes'), vidOn = loadTicks('videoScenes');
+function saveTicks() {
+  try { localStorage.setItem('imageScenes', JSON.stringify([...imgOn])); localStorage.setItem('videoScenes', JSON.stringify([...vidOn])); } catch { /* ignore */ }
+}
+const pickedScenes = () => state.scenes.filter(s => sceneReady(s) && imgOn.has(s.name)).map(s => s.name);
 const pickedVideoScenes = () => state.scenes.filter(s => sceneReady(s) && vidOn.has(s.name)).map(s => s.name);
+/** The kind of the ticked scenes, or null when nothing is ticked. */
+function lockedKind() {
+  const first = state.scenes.find(s => sceneReady(s) && (imgOn.has(s.name) || vidOn.has(s.name)));
+  return first ? sceneKind(first) : null;
+}
+const isDuoKind = kind => kind === 'side' || kind === 'stacked';
+/** The ticked raw artworks. */
+const tickedArts = () => rawArtworks().filter(a => state.selected.has(a.file)).map(a => a.file);
 
 function renderGenerate() {
+  // choices saved earlier may mix kinds (a scene can be changed afterwards): keep the first kind only
+  const kind = lockedKind();
+  state.scenes.filter(s => sceneReady(s) && sceneKind(s) !== kind).forEach(s => { imgOn.delete(s.name); vidOn.delete(s.name); });
+  saveTicks();
   const box = $('genScenes');
   box.innerHTML = '';
   if (!state.scenes.some(sceneReady)) {
@@ -387,77 +422,165 @@ function renderGenerate() {
   }
   for (const s of state.scenes) {
     const ready = sceneReady(s);
-    const row = document.createElement('div'); row.className = 'genGrid';
-    const name = document.createElement('span'); name.textContent = s.name + (s.frameCount === 2 ? ' · 2 frames' : '') + (ready ? '' : ' (set corners first)');
-    const mk = (on, set, onChange) => {
-      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.disabled = !ready; cb.checked = ready && on;
-      cb.onchange = () => { onChange(cb.checked); updateSummary(); };
+    const blocked = ready && kind !== null && sceneKind(s) !== kind;
+    const row = document.createElement('div'); row.className = 'genGrid' + (!ready || blocked ? ' off' : '');
+    if (blocked) row.title = `Only scenes with ${KIND_LABEL[kind]} can be ticked now. Untick them all to choose another type.`;
+    const name = document.createElement('span');
+    name.textContent = s.name + (s.frameCount === 2 ? ` · ${ready ? KIND_LABEL[sceneKind(s)] : '2 frames'}` : '') + (ready ? '' : ' (set corners first)');
+    const tick = (set, label) => {
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.disabled = !ready || blocked; cb.checked = ready && set.has(s.name);
+      cb.setAttribute('aria-label', `${label}: ${s.name}`);
+      cb.onchange = () => { cb.checked ? set.add(s.name) : set.delete(s.name); saveTicks(); renderGenerate(); };
       return cb;
     };
-    row.append(name,
-      mk(!genOff.has(s.name), genOff, on => on ? genOff.delete(s.name) : genOff.add(s.name)),
-      mk(vidOn.has(s.name), vidOn, on => { on ? vidOn.add(s.name) : vidOn.delete(s.name); saveVidOn(); }));
+    row.append(tick(imgOn, 'Images'), tick(vidOn, 'Videos'), name);
     box.appendChild(row);
   }
+  renderSplits();
   renderPairs();
   synFillLists();
   updateSummary();
 }
+/** "All": every scene of the ticked kind; with nothing ticked, the one-frame scenes. */
+function tickAll(set) {
+  const ready = state.scenes.filter(sceneReady);
+  const kind = lockedKind() ?? (ready.some(s => sceneKind(s) === 'single') ? 'single' : ready[0] && sceneKind(ready[0]));
+  ready.filter(s => sceneKind(s) === kind).forEach(s => set.add(s.name));
+  saveTicks(); renderGenerate();
+}
+$('btnScAll').onclick = () => tickAll(imgOn);
+$('btnScNone').onclick = () => { imgOn.clear(); saveTicks(); renderGenerate(); };
+$('btnVidScAll').onclick = () => tickAll(vidOn);
+$('btnVidScNone').onclick = () => { vidOn.clear(); saveTicks(); renderGenerate(); };
 
-// --- artwork pairs for two-frame scenes ({first, second}; an empty second splits the first across both frames) ---
+// --- splitting artworks for two-frame scenes (a plain cut into part1 / part2: no upscaling, no border) ---
+const cutOffsets = new Map(); // artwork -> crop position chosen in the panel
+const redo = new Set(); // already split artworks the user wants to cut again
+const splitNeeded = kind => tickedArts().filter(f => splitOf(f) !== kind);
+const toCut = kind => { const need = splitNeeded(kind); return tickedArts().filter(f => need.includes(f) || redo.has(f)); };
+/** How much of the artwork a split cuts away, in percent. */
+function cutAway(file, kind) {
+  const a = state.artworks.find(x => x.file === file), shape = kind === 'side' ? 4 / 3 : 3 / 4, ratio = a.width / a.height;
+  return Math.round(100 * (1 - Math.min(ratio / shape, shape / ratio)));
+}
+
+function renderSplits() {
+  const kind = lockedKind(), arts = tickedArts();
+  $('splitBox').hidden = !isDuoKind(kind) || !arts.length;
+  const list = $('splitList'); list.innerHTML = '';
+  if ($('splitBox').hidden) return;
+  const need = splitNeeded(kind), done = arts.filter(f => !need.includes(f));
+  $('splitHelp').textContent = `The ticked scenes have ${KIND_LABEL[kind]}. Each ticked artwork is cut into part1 (${kind === 'side' ? 'left' : 'top'}) and part2, saved in the artworks folder without upscaling or border. ` +
+    (need.length ? `${need.length} artwork(s) still need this split.` : 'All ticked artworks are split: press Generate.');
+  $('resplitRow').hidden = !done.length;
+  for (const file of [...need, ...($('chkResplit').checked ? done : [])]) list.appendChild(splitCard(file, kind, need.includes(file)));
+  updateCutButton(kind);
+}
+function splitCard(file, kind, needed) {
+  const card = document.createElement('div'); card.className = 'splitCard';
+  const img = document.createElement('img'); img.loading = 'lazy'; img.alt = `How ${file} will be cut`;
+  const show = () => { img.src = `/api/split/cut-preview?artwork=${encodeURIComponent(file)}&layout=${kind}&offset=${cutOffsets.get(file) ?? 0.5}`; };
+  show();
+  const name = document.createElement('strong'); name.textContent = file;
+  const now = splitOf(file), away = cutAway(file, kind);
+  const status = document.createElement('span'); status.className = 'small ' + (away > 30 ? 'warn' : 'muted');
+  status.textContent = (!now ? 'Not split yet' : needed ? `Split ${now === 'side' ? 'side by side' : 'top and bottom'} now: those parts will be replaced` : 'Already split') +
+    (away ? ` · cuts away ${away}%` : ' · nothing cut away');
+  const slider = document.createElement('input'); slider.type = 'range'; slider.min = 0; slider.max = 1; slider.step = 0.01;
+  slider.value = cutOffsets.get(file) ?? 0.5; slider.disabled = !away;
+  const label = document.createElement('label'); label.append('Crop position', slider);
+  card.append(img, name, status, label);
+  let again = null;
+  if (!needed) {
+    const row = document.createElement('label'); row.className = 'inline';
+    again = document.createElement('input'); again.type = 'checkbox'; again.checked = redo.has(file);
+    again.onchange = () => { again.checked ? redo.add(file) : redo.delete(file); updateCutButton(kind); };
+    row.append(again, 'Split again (replaces the parts)');
+    card.appendChild(row);
+  }
+  const refresh = debounce(show, 250);
+  slider.oninput = () => {
+    cutOffsets.set(file, +slider.value);
+    if (again) { again.checked = true; redo.add(file); updateCutButton(kind); }
+    refresh();
+  };
+  return card;
+}
+function updateCutButton(kind) {
+  const n = toCut(kind).length;
+  $('btnCut').hidden = !n;
+  $('btnCut').textContent = `Confirm split (${n} artwork${n === 1 ? '' : 's'})`;
+}
+$('chkResplit').onchange = () => { if (!$('chkResplit').checked) redo.clear(); renderSplits(); };
+$('btnCut').onclick = guard(async () => {
+  const kind = lockedKind(), files = toCut(kind), button = $('btnCut');
+  button.disabled = true;
+  const replaced = files.some(f => splitOf(f));
+  try {
+    for (const [i, file] of files.entries()) {
+      $('splitProgress').textContent = `Splitting ${i + 1} of ${files.length}: ${file}`;
+      await api('/split/cut', { json: { artwork: file, layout: kind, offset: cutOffsets.get(file) ?? 0.5, overwrite: true } });
+      redo.delete(file);
+    }
+    toast('Split done. Press Generate.');
+  } finally {
+    button.disabled = false;
+    $('splitProgress').textContent = replaced ? 'Parts were replaced: tick "Overwrite existing outputs" to render them again.' : '';
+    await loadArtworks();
+    renderSplits(); updateSummary();
+  }
+});
+
+// --- custom pairs for two-frame scenes: two different artworks, one per frame ---
 let pairs = [];
-try { pairs = JSON.parse(localStorage.getItem('artPairs') || '[]').filter(p => p && p.first); } catch { /* ignore */ }
+try { pairs = JSON.parse(localStorage.getItem('artPairs') || '[]').filter(p => p && p.first && p.second); } catch { /* ignore */ }
 function savePairs() { try { localStorage.setItem('artPairs', JSON.stringify(pairs)); } catch { /* ignore */ } }
 /** The pairs without duplicates, as sent to the server. */
-const pickedPairs = () => [...new Map(pairs.map(p => [`${p.first}|${p.second}`, { first: p.first, second: p.second || null }])).values()];
+const pickedPairs = () => [...new Map(pairs.map(p => [`${p.first}|${p.second}`, p])).values()];
 
 function renderPairs() {
-  $('pairBox').hidden = !state.scenes.some(s => s.frameCount === 2);
+  $('pairBox').hidden = !isDuoKind(lockedKind());
   const list = $('pairList'); list.innerHTML = '';
   pairs.forEach((pair, i) => {
     const row = document.createElement('div'); row.className = 'row pairRow';
-    const pick = (text, key, blank) => {
+    const pick = (text, key) => {
       const label = document.createElement('label'); label.className = 'inline'; label.append(text);
       const sel = document.createElement('select');
-      fillArtSelect(sel, blank, pair[key]);
+      fillArtSelect(sel, '', pair[key]);
       sel.onchange = () => { pair[key] = sel.value; savePairs(); updateSummary(); };
       label.appendChild(sel);
       return label;
     };
     const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Remove';
     remove.onclick = () => { pairs.splice(i, 1); savePairs(); renderPairs(); updateSummary(); };
-    row.append(pick('Frame 1', 'first'), pick('Frame 2', 'second', SPLIT_LABEL), remove);
+    row.append(pick('Frame 1', 'first'), pick('Frame 2', 'second'), remove);
     list.appendChild(row);
   });
 }
 $('btnAddPair').onclick = guard(() => {
-  const all = okArtworks().map(a => a.file);
+  const all = rawArtworks().map(a => a.file);
   if (!all.length) throw new Error('Add artworks first.');
   const used = new Set(pairs.flatMap(p => [p.first, p.second]));
-  const free = previewArtworks().filter(f => !used.has(f)); // start from the ticked artworks not paired yet
-  pairs.push({ first: free[0] ?? all[0], second: free[1] ?? '' });
+  const free = all.filter(f => !used.has(f) && !state.selected.has(f)); // ticked ones are already shown split
+  const first = free[0] ?? all[0];
+  pairs.push({ first, second: free[1] ?? all.find(f => f !== first) ?? first });
   savePairs(); renderPairs(); updateSummary();
 });
-$('btnScAll').onclick = () => { genOff.clear(); renderGenerate(); };
-$('btnScNone').onclick = () => { state.scenes.forEach(s => genOff.add(s.name)); renderGenerate(); };
-$('btnVidScAll').onclick = () => { state.scenes.filter(sceneReady).forEach(s => vidOn.add(s.name)); saveVidOn(); renderGenerate(); };
-$('btnVidScNone').onclick = () => { vidOn.clear(); saveVidOn(); renderGenerate(); };
 
 function updateSummary() {
-  const imgs = pickedScenes(), vids = pickedVideoScenes(), a = state.selected.size, p = pickedPairs().length;
-  const describe = (names, noun) => {
-    const duo = names.filter(isDuo).length, solo = names.length - duo, how = [];
-    if (solo) how.push(`${solo} scene(s) × ${a} artwork(s)`);
-    if (duo) how.push(`${duo} two-frame scene(s) × ${p} pair(s)`);
-    return `${solo * a + duo * p} ${noun}(s) (${how.join(' + ')})`;
-  };
+  const imgs = pickedScenes(), vids = pickedVideoScenes(), kind = lockedKind(), a = tickedArts().length, p = pickedPairs().length;
+  const duo = isDuoKind(kind);
+  const describe = (names, noun) => duo
+    ? `${names.length * (a + p)} ${noun}(s) (${names.length} two-frame scene(s) × ${a} split artwork(s)${p ? ` + ${p} pair(s)` : ''})`
+    : `${names.length * a} ${noun}(s) (${names.length} scene(s) × ${a} artwork(s))`;
   const parts = [];
   if (imgs.length) parts.push(describe(imgs, 'image'));
   if (vids.length) parts.push(describe(vids, 'video'));
   let text = parts.length ? 'Will generate ' + parts.join(' and ') + '.' : 'Tick at least one scene under Images or Videos.';
-  const all = [...imgs, ...vids];
-  if (!a && all.some(n => !isDuo(n))) text += ' Select artworks in the Artworks tab.';
-  if (!p && all.some(isDuo)) text += ' Add a two-frame pair above.';
+  if (kind === 'single' && !a) text += ' Select artworks in the Artworks tab.';
+  if (duo && !a && !p) text += ' Select artworks in the Artworks tab, or add a pair above.';
+  const need = duo ? splitNeeded(kind).length : 0;
+  if (need) text += ` First confirm the split of ${need} artwork(s) above.`;
   $('genSummary').textContent = text;
 }
 
@@ -529,11 +652,17 @@ async function watchJob(pollPath, cancelPath, ui, noun) {
 const setBusy = busy => { $('btnGenerate').disabled = busy; $('btnCancel').disabled = !busy; };
 
 $('btnGenerate').onclick = guard(async () => {
-  const imgs = pickedScenes(), vids = pickedVideoScenes(), arts = [...state.selected];
+  const imgs = pickedScenes(), vids = pickedVideoScenes(), ticked = tickedArts(), kind = lockedKind();
   if (!imgs.length && !vids.length) throw new Error('No scene ticked. Tick scenes under Images and/or Videos (scenes need their 4 corners set in the Scenes tab).');
-  const chosen = pickedPairs(), all = [...imgs, ...vids];
-  if (!arts.length && all.some(n => !isDuo(n))) throw new Error('No artwork selected. Tick artworks in the Artworks tab.');
-  if (!chosen.length && all.some(isDuo)) throw new Error('A two-frame scene is ticked. Add at least one pair under Two-frame pairs.');
+  const duo = isDuoKind(kind);
+  const arts = duo ? [] : ticked;
+  // two-frame scenes: every ticked artwork split across both frames (no second file), then the custom pairs
+  const chosen = duo ? [...ticked.map(first => ({ first, second: null })), ...pickedPairs()] : [];
+  if (!arts.length && !chosen.length) throw new Error('No artwork selected. Tick artworks in the Artworks tab.');
+  if (duo && splitNeeded(kind).length) {
+    $('splitBox').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    throw new Error(`Confirm the split of ${splitNeeded(kind).length} artwork(s) first.`);
+  }
   cancelRequested = false; setBusy(true);
   $('errBox').hidden = true; $('synErrBox').hidden = true;
   $('bar').style.width = '0%'; $('synBar').style.width = '0%'; $('progText').textContent = ''; $('synProg').textContent = '';

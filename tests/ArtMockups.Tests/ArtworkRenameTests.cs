@@ -70,10 +70,10 @@ public class ArtworkRenameTests
     [Fact]
     public void PrintFile_FollowsItsArtwork()
     {
-        var (lib, _, cleanup) = Setup("0003_print.png", "sea_print.jpg", "sea.png");
+        var (lib, _, cleanup) = Setup("0003_print.png", "0003_print_part1.png", "sea_print.jpg", "sea_print_part2.png", "sea.png");
         try
         {
-            Assert.Equal([("sea.png", "0004.png"), ("sea_print.jpg", "0004_print.jpg")],
+            Assert.Equal([("sea.png", "0004.png"), ("sea_print.jpg", "0004_print.jpg"), ("sea_print_part2.png", "0004_print_part2.png")],
                 lib.NormalizeNames(true).Select(p => (p.From, p.To)));
         }
         finally { cleanup(); }

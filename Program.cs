@@ -181,7 +181,10 @@ static void OpenFolder(string dir)
 
 api.MapPost("/output/open", (AppPaths paths) => { OpenFolder(paths.OutputDir); return Results.Ok(); });
 
-// ---------- split one artwork into two print files ----------
+// ---------- print files, and the plain split used by two-frame scenes ----------
+api.MapPost("/split/cut", (SplitRequest r, SplitService s) => s.Cut(r));
+api.MapGet("/split/cut-preview", (string artwork, string layout, double? offset, SplitService s) =>
+    Results.File(s.CutPreview(artwork, layout, offset ?? 0.5), "image/jpeg"));
 api.MapPost("/split/info", (SplitRequest r, SplitService s) => s.Info(r));
 api.MapPost("/split/preview", (SplitRequest r, SplitService s) => Results.File(s.Preview(r), "image/jpeg"));
 api.MapPost("/split/export", (SplitRequest r, SplitService s) => s.Export(r));

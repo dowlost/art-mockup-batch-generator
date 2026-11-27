@@ -53,6 +53,22 @@ public class Scene
     public bool IsReady => Frames.All(f => f.Count == 4);
 
     /// <summary>
+    /// How the two frames of a two-frame scene are placed: side by side, or one above the other. It decides how an
+    /// artwork has to be split for the scene. (app.js has the same rule.)
+    /// </summary>
+    [JsonIgnore]
+    public SplitLayout Arrangement
+    {
+        get
+        {
+            if (FrameCount != 2 || !IsReady) return SplitLayout.Side;
+            var dx = Math.Abs(Corners2.Average(p => p.X) - Corners.Average(p => p.X));
+            var dy = Math.Abs(Corners2.Average(p => p.Y) - Corners.Average(p => p.Y));
+            return dx >= dy ? SplitLayout.Side : SplitLayout.Stacked;
+        }
+    }
+
+    /// <summary>
     /// The quad the zoom camera aims at: the frame itself, or the box around both frames. Empty until the scene is ready.
     /// </summary>
     public IReadOnlyList<PointD> CameraTarget()
