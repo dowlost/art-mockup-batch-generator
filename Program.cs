@@ -16,6 +16,8 @@ builder.Services.AddSingleton<SceneImageCache>();
 builder.Services.AddSingleton<ArtworkLibrary>();
 builder.Services.AddSingleton<BatchService>();
 builder.Services.AddSingleton<ZoomVideoService>();
+builder.Services.AddSingleton<Upscayl>();
+builder.Services.AddSingleton<SplitService>();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o => o.MultipartBodyLengthLimit = 200_000_000);
 
 var app = builder.Build();
@@ -103,12 +105,14 @@ api.MapGet("/artworks/{file}/thumb", (string file, ArtworkLibrary lib) =>
 // ---------- preview ----------
 api.MapPost("/preview", (PreviewRequest r, SceneStore scenes, SceneImageCache cache, ArtworkLibrary lib, ConfigStore cfg) =>
 {
+    // the scene as currently edited in the UI (not necessarily saved yet)
     var scene = scenes.Get(r.Scene);
-    var corners = r.Corners ?? scene.Corners;
-    var settings = r.Settings ?? scene.Settings;
-    using var prepared = PreparedScene.Create(cache.Get(scene), corners, settings);
-    using var art = ImageIO.Load(lib.Resolve(r.Artwork));
-    using var result = prepared.Render(art);
+    scene.Corners = r.Corners ?? scene.Corners;
+    scene.Corners2 = r.Corners2 ?? scene.Corners2;
+    scene.FrameCount = r.FrameCount ?? scene.FrameCount;
+    scene.Settings = r.Settings ?? scene.Settings;
+    using var prepared = PreparedMockup.Create(cache.Get(scene), scene);
+    using var result = prepared.Render(lib, new ArtPair(r.Artwork, r.Artwork2));
     using var shown = ImageIO.ResizeToMaxSide(result, r.MaxSide ?? 1600);
     return Results.File(ImageIO.Encode(shown, ".jpg", 90), "image/jpeg");
 });
@@ -118,14 +122,17 @@ api.MapPost("/contact-sheet", (SheetRequest r, SceneStore scenes, SceneImageCach
     var scene = scenes.Get(r.Scene);
     var names = r.Artworks.Take(6).ToList();
     if (names.Count == 0) throw new ArgumentException("Select at least one artwork.");
-    using var prepared = PreparedScene.Create(cache.Get(scene), r.Corners ?? scene.Corners, r.Settings ?? scene.Settings);
+    scene.Corners = r.Corners ?? scene.Corners;
+    scene.Corners2 = r.Corners2 ?? scene.Corners2;
+    scene.FrameCount = r.FrameCount ?? scene.FrameCount;
+    scene.Settings = r.Settings ?? scene.Settings;
+    using var prepared = PreparedMockup.Create(cache.Get(scene), scene);
     var cells = new List<Mat>();
     try
     {
         foreach (var n in names)
         {
-            using var art = ImageIO.Load(lib.Resolve(n));
-            using var full = prepared.Render(art);
+            using var full = prepared.Render(lib, new ArtPair(n)); // two-frame scenes show each artwork split
             var cell = ImageIO.ResizeToMaxSide(full, 640);
             cells.Add(cell);
         }
@@ -174,11 +181,17 @@ static void OpenFolder(string dir)
 
 api.MapPost("/output/open", (AppPaths paths) => { OpenFolder(paths.OutputDir); return Results.Ok(); });
 
+// ---------- split one artwork into two print files ----------
+api.MapPost("/split/info", (SplitRequest r, SplitService s) => s.Info(r));
+api.MapPost("/split/preview", (SplitRequest r, SplitService s) => Results.File(s.Preview(r), "image/jpeg"));
+api.MapPost("/split/export", (SplitRequest r, SplitService s) => s.Export(r));
+api.MapPost("/split/open", (ArtworkLibrary lib) => { OpenFolder(lib.Folder); return Results.Ok(); });
+
 // ---------- zoom videos (virtual camera over the composited scene) ----------
 api.MapPost("/videos/synthetic", (SyntheticRequest req, ZoomVideoService z) => Results.Ok(z.StartSynthetic(req).Snapshot()));
 api.MapPost("/videos/synthetic/info", (SyntheticRequest req, ZoomVideoService z) => Results.Ok(z.SyntheticInfo(req)));
 api.MapPost("/videos/synthetic/preview", async (SyntheticPreview pv, ZoomVideoService z) =>
-    Results.File(await z.PreviewSyntheticAsync(pv.Options, pv.Artwork, pv.T), "image/jpeg"));
+    Results.File(await z.PreviewSyntheticAsync(pv.Options, new ArtPair(pv.Artwork, pv.Artwork2), pv.T), "image/jpeg"));
 api.MapGet("/videos/jobs/{id}", (string id, ZoomVideoService z) => z.Get(id) is { } j ? Results.Ok(j.Snapshot()) : Results.NotFound());
 api.MapPost("/videos/jobs/{id}/cancel", (string id, ZoomVideoService z) => { z.Get(id)?.Cts.Cancel(); return Results.Accepted(); });
 
@@ -199,8 +212,10 @@ app.Lifetime.ApplicationStarted.Register(() => Console.WriteLine("Art Mockup Bat
 app.Run();
 
 record ConfigPatch(string? ArtworkFolder);
-record PreviewRequest(string Scene, string Artwork, List<PointD>? Corners, SceneSettings? Settings, int? MaxSide);
-record SheetRequest(string Scene, List<string> Artworks, List<PointD>? Corners, SceneSettings? Settings);
-record SyntheticPreview(SyntheticRequest Options, string Artwork, double T);
+record PreviewRequest(string Scene, string Artwork, List<PointD>? Corners, SceneSettings? Settings, int? MaxSide,
+    string? Artwork2 = null, List<PointD>? Corners2 = null, int? FrameCount = null);
+record SheetRequest(string Scene, List<string> Artworks, List<PointD>? Corners, SceneSettings? Settings,
+    List<PointD>? Corners2 = null, int? FrameCount = null);
+record SyntheticPreview(SyntheticRequest Options, string Artwork, double T, string? Artwork2 = null);
 
 public partial class Program { }

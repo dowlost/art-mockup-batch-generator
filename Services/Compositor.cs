@@ -8,12 +8,16 @@ public static class ImageIO
     public static Mat Load(string path)
     {
         if (!File.Exists(path)) throw new FileNotFoundException($"File not found: {Path.GetFileName(path)}");
-        var bytes = File.ReadAllBytes(path);
-        var mat = Cv2.ImDecode(bytes, ImreadModes.Color);
+        return Decode(File.ReadAllBytes(path), Path.GetFileName(path), ImreadModes.Color);
+    }
+
+    public static Mat Decode(byte[] bytes, string name, ImreadModes mode)
+    {
+        var mat = Cv2.ImDecode(bytes, mode);
         if (mat.Empty())
         {
             mat.Dispose();
-            throw new InvalidDataException($"Cannot decode image '{Path.GetFileName(path)}' (corrupt or unsupported).");
+            throw new InvalidDataException($"Cannot decode image '{name}' (corrupt or unsupported).");
         }
         return mat;
     }
@@ -73,10 +77,12 @@ public static class ImageIO
     }
 
     /// <summary>Atomic save: write to a temp file and move into place. maxBytes 0 = no size limit.</summary>
-    public static void Save(string path, Mat img, int jpegQuality, long maxBytes = 0)
+    public static void Save(string path, Mat img, int jpegQuality, long maxBytes = 0) =>
+        WriteAtomic(path, EncodeUnderLimit(img, Path.GetExtension(path), jpegQuality, maxBytes));
+
+    public static void WriteAtomic(string path, byte[] bytes)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var bytes = EncodeUnderLimit(img, Path.GetExtension(path), jpegQuality, maxBytes);
         var tmp = path + ".tmp";
         File.WriteAllBytes(tmp, bytes);
         File.Move(tmp, path, overwrite: true);
@@ -237,6 +243,18 @@ public sealed class PreparedScene : IDisposable
     /// <summary>Composites <paramref name="artwork"/> into the scene and returns a new full-size BGR image.</summary>
     public Mat Render(Mat artwork)
     {
+        var output = _scene.Clone();
+        try { RenderInto(output, artwork); }
+        catch { output.Dispose(); throw; }
+        return output;
+    }
+
+    /// <summary>
+    /// Composites <paramref name="artwork"/> into this frame of <paramref name="target"/> (an image of the same size as
+    /// the scene), blending over what is already there, so several frames can be rendered one after another.
+    /// </summary>
+    public void RenderInto(Mat target, Mat artwork)
+    {
         using var canvas = FitArtwork(artwork);
         var src = new[] { new Point2f(0, 0), new Point2f(_frameW, 0), new Point2f(_frameW, _frameH), new Point2f(0, _frameH) };
         using var M = Cv2.GetPerspectiveTransform(src, _local);
@@ -261,19 +279,16 @@ public sealed class PreparedScene : IDisposable
             Cv2.Subtract(Scalar.All(255), tmp, art);
         }
 
-        using var sceneRoi = new Mat(_scene, _roi);
-        using var sceneF = new Mat();
-        sceneRoi.ConvertTo(sceneF, MatType.CV_32FC3);
+        using var targetRoi = new Mat(target, _roi);
+        using var baseF = new Mat();
+        targetRoi.ConvertTo(baseF, MatType.CV_32FC3);
         using var diff = new Mat();
-        Cv2.Subtract(art, sceneF, diff);
+        Cv2.Subtract(art, baseF, diff);
         Cv2.Multiply(diff, _alpha3, diff);
-        Cv2.Add(sceneF, diff, diff);
+        Cv2.Add(baseF, diff, diff);
         using var res8 = new Mat();
         diff.ConvertTo(res8, MatType.CV_8UC3);
-
-        var output = _scene.Clone();
-        using (var view = new Mat(output, _roi)) res8.CopyTo(view);
-        return output;
+        res8.CopyTo(targetRoi);
     }
 
     /// <summary>Prepares the artwork to exactly the frame's aspect ratio according to fit mode.</summary>

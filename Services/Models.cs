@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace ArtMockups;
@@ -34,14 +35,38 @@ public class Scene
 {
     public string Name { get; set; } = "";
     public string Image { get; set; } = "";
-    /// <summary>4 points (TL, TR, BR, BL) in original image pixels. Empty until set.</summary>
+    /// <summary>Frame 1: 4 points (TL, TR, BR, BL) in original image pixels. Empty until set.</summary>
     public List<PointD> Corners { get; set; } = new();
+    /// <summary>Number of frames in the photo: 1 or 2.</summary>
+    public int FrameCount { get; set; } = 1;
+    /// <summary>Frame 2, same format as <see cref="Corners"/>. Only used when <see cref="FrameCount"/> is 2.</summary>
+    public List<PointD> Corners2 { get; set; } = new();
     public SceneSettings Settings { get; set; } = new();
     /// <summary>Optional expected artwork aspect ratio (width / height), used only for warnings.</summary>
     public double? ExpectedAspectRatio { get; set; }
+
+    /// <summary>The corner sets of the frames in use.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<List<PointD>> Frames => FrameCount == 2 ? [Corners, Corners2] : [Corners];
+
+    [JsonIgnore]
+    public bool IsReady => Frames.All(f => f.Count == 4);
+
+    /// <summary>
+    /// The quad the zoom camera aims at: the frame itself, or the box around both frames. Empty until the scene is ready.
+    /// </summary>
+    public IReadOnlyList<PointD> CameraTarget()
+    {
+        if (!IsReady) return [];
+        if (FrameCount != 2) return Corners;
+        var all = Frames.SelectMany(f => f).ToList();
+        double x0 = all.Min(p => p.X), x1 = all.Max(p => p.X), y0 = all.Min(p => p.Y), y1 = all.Max(p => p.Y);
+        return [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)];
+    }
 }
 
-public record SceneUpdate(string? Name, List<PointD>? Corners, SceneSettings? Settings, double? ExpectedAspectRatio, bool? ClearExpectedAspectRatio);
+public record SceneUpdate(string? Name, List<PointD>? Corners, SceneSettings? Settings, double? ExpectedAspectRatio, bool? ClearExpectedAspectRatio,
+    List<PointD>? Corners2 = null, int? FrameCount = null);
 
 public class AppConfig
 {

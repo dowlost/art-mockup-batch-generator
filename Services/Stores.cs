@@ -15,6 +15,8 @@ public sealed class AppPaths
     public string CacheDir => Path.Combine(DataDir, ".cache");
     public string ScenesJson => Path.Combine(ScenesDir, "scenes.json");
     public string ConfigJson => Path.Combine(DataDir, "config.json");
+    /// <summary>Highest artwork number used so far. Tracked in git, unlike the artworks themselves.</summary>
+    public string CounterJson => Path.Combine(DataDir, "artworks-counter.json");
 
     public AppPaths(string root)
     {
@@ -142,16 +144,23 @@ public sealed class SceneStore(AppPaths paths)
             var list = ReadUnlocked();
             var scene = list.FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
                         ?? throw new FileNotFoundException($"Scene '{name}' not found.");
-            if (u.Corners != null)
+            if (u.FrameCount is { } frames)
             {
-                if (u.Corners.Count != 4 && u.Corners.Count != 0) throw new ArgumentException("A scene needs exactly 4 corners.");
-                if (u.Corners.Count == 4)
+                if (frames is not (1 or 2)) throw new ArgumentException("A scene has 1 or 2 frames.");
+                scene.FrameCount = frames;
+            }
+            foreach (var corners in new[] { u.Corners, u.Corners2 })
+            {
+                if (corners == null) continue;
+                if (corners.Count != 4 && corners.Count != 0) throw new ArgumentException("Each frame needs exactly 4 corners.");
+                if (corners.Count == 4)
                 {
                     using var img = ImageIO.Load(ImagePath(scene));
-                    PreparedScene.ValidateCorners(u.Corners, img.Width, img.Height);
+                    PreparedScene.ValidateCorners(corners, img.Width, img.Height);
                 }
-                scene.Corners = u.Corners;
             }
+            if (u.Corners != null) scene.Corners = u.Corners;
+            if (u.Corners2 != null) scene.Corners2 = u.Corners2;
             if (u.Settings != null) scene.Settings = u.Settings.Normalized();
             if (u.ClearExpectedAspectRatio == true) scene.ExpectedAspectRatio = null;
             else if (u.ExpectedAspectRatio is > 0) scene.ExpectedAspectRatio = u.ExpectedAspectRatio;
@@ -204,6 +213,36 @@ public record RenameItem(string From, string To);
 
 public record ArtworkInfo(string File, string Stem, int Width, int Height, long Bytes, string? Error);
 
+/// <summary>
+/// The print files written next to an artwork: 0001_print (the whole art), or 0001_part1 (left or top) and
+/// 0001_part2 when it is split.
+/// </summary>
+public static class PrintFiles
+{
+    public const string Full = "print";
+    public static readonly string[] Halves = ["part1", "part2"];
+
+    static readonly System.Text.RegularExpressions.Regex Pattern =
+        new(@"^(.+)_(part[12]|print)$", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    public static string FileName(string stem, string suffix, string ext) => $"{stem}_{suffix}.{ext}";
+
+    public static bool IsPrintFile(string stem) => Pattern.IsMatch(stem);
+
+    /// <summary>"0001_part2" and "0001_print" give "0001"; other names are returned unchanged.</summary>
+    public static string BaseStem(string stem) => Pattern.Match(stem) is { Success: true } m ? m.Groups[1].Value : stem;
+
+    /// <summary>Full paths of these print files of an artwork that are already in the folder, in any image format.</summary>
+    public static List<string> Existing(string folder, string stem, IEnumerable<string> suffixes)
+    {
+        if (!Directory.Exists(folder)) return [];
+        var wanted = suffixes.Select(s => $"{stem}_{s}").ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return Directory.EnumerateFiles(folder)
+            .Where(f => ArtworkLibrary.IsImage(f) && wanted.Contains(Path.GetFileNameWithoutExtension(f)))
+            .OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+}
+
 public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
 {
     static readonly HashSet<string> Ext = new(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".webp" };
@@ -211,9 +250,11 @@ public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
 
     public string Folder => string.IsNullOrWhiteSpace(config.Current.ArtworkFolder) ? Path.Combine(paths.DataDir, "artworks") : paths.Resolve(config.Current.ArtworkFolder);
 
+    public static bool IsImage(string path) => Ext.Contains(Path.GetExtension(path));
+
     public IEnumerable<string> Files() =>
         Directory.Exists(Folder)
-            ? Directory.EnumerateFiles(Folder).Where(f => Ext.Contains(Path.GetExtension(f))).OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+            ? Directory.EnumerateFiles(Folder).Where(IsImage).OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
             : Enumerable.Empty<string>();
 
     public List<ArtworkInfo> List()
@@ -223,8 +264,38 @@ public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
         var result = new ArtworkInfo[files.Count];
         Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) },
             i => result[i] = GetInfo(files[i]));
+        RecordNumber(HighestNumber(files));
         return result.ToList();
     }
+
+    record Counter(int LastNumber);
+    readonly object _counterLock = new();
+
+    /// <summary>The highest number in the counter file: 0 if there is none, null if the file cannot be read.</summary>
+    public int? LastNumber()
+    {
+        lock (_counterLock)
+        {
+            if (!File.Exists(paths.CounterJson)) return 0;
+            try { return JsonSerializer.Deserialize<Counter>(File.ReadAllText(paths.CounterJson), Json.Options) is { LastNumber: >= 0 } c ? c.LastNumber : null; }
+            catch (JsonException) { return null; }
+        }
+    }
+
+    /// <summary>Raises the counter to <paramref name="number"/>; it never goes down. An unreadable file is left alone.</summary>
+    void RecordNumber(int number)
+    {
+        lock (_counterLock)
+        {
+            if (LastNumber() is not { } last || number <= last) return;
+            File.WriteAllText(paths.CounterJson, JsonSerializer.Serialize(new Counter(number), Json.Options) + "\n");
+        }
+    }
+
+    static string NumberPart(string file) => PrintFiles.BaseStem(Path.GetFileNameWithoutExtension(file));
+
+    static int HighestNumber(IEnumerable<string> files) =>
+        files.Select(NumberPart).Where(s => FourDigits.IsMatch(s)).Select(int.Parse).DefaultIfEmpty(0).Max();
 
     /// <summary>Resolves an artwork file name to a full path inside the artwork folder (no path traversal).</summary>
     public string Resolve(string file)
@@ -270,28 +341,44 @@ public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
     static readonly System.Text.RegularExpressions.Regex FourDigits = new(@"^\d{4}$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     /// <summary>
-    /// Renames every artwork whose name is not exactly four digits (0001.png) to the next free numbers after the highest
-    /// existing one (e.g. 0048, 0049, ...), oldest file first. Already-numbered files are never touched.
-    /// With <paramref name="dryRun"/> nothing is renamed and the plan is returned. Renames are appended to artworks-rename-map.csv.
+    /// Renames every artwork whose name is not exactly four digits (0001.png) to the next numbers after the highest one
+    /// ever used (in the folder or in the counter file, so numbers are not reused), oldest file first. Already-numbered
+    /// files and their print files (0001_part1, 0001_print) are never touched; the print files of a renamed artwork get
+    /// its new number. With <paramref name="dryRun"/> nothing is renamed and the plan is returned. Renames are appended
+    /// to artworks-rename-map.csv.
     /// </summary>
     public List<RenameItem> NormalizeNames(bool dryRun)
     {
         var files = Files().ToList();
-        bool Ok(string f) => FourDigits.IsMatch(Path.GetFileNameWithoutExtension(f));
-        int next = files.Where(Ok).Select(f => int.Parse(Path.GetFileNameWithoutExtension(f))).DefaultIfEmpty(0).Max();
+        static string Stem(string f) => Path.GetFileNameWithoutExtension(f);
+        bool Ok(string f) => FourDigits.IsMatch(NumberPart(f));
+        int last = LastNumber() ?? throw new InvalidDataException(
+            $"{Path.GetFileName(paths.CounterJson)} cannot be read. Fix it (for example after a merge conflict) before renaming.");
+        int next = Math.Max(last, HighestNumber(files));
         var todo = files.Where(f => !Ok(f))
-            .OrderBy(f => File.GetCreationTimeUtc(f)).ThenBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+            .OrderBy(f => PrintFiles.IsPrintFile(Stem(f))) // artworks first, so that their print files can follow them
+            .ThenBy(f => File.GetCreationTimeUtc(f)).ThenBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
 
         var plan = new List<RenameItem>();
+        var numbers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); // old name -> new number
         foreach (var f in todo)
         {
-            do { next++; } while (next <= 9999 && Directory.EnumerateFiles(Folder, $"{next:0000}.*").Any());
-            if (next > 9999) throw new InvalidOperationException("No free four-digit numbers left (0001-9999).");
-            plan.Add(new RenameItem(Path.GetFileName(f), $"{next:0000}{Path.GetExtension(f).ToLowerInvariant()}"));
+            var stem = Stem(f);
+            var baseStem = PrintFiles.BaseStem(stem);
+            if (!PrintFiles.IsPrintFile(stem) || !numbers.TryGetValue(baseStem, out var number))
+            {
+                do { next++; } while (next <= 9999 && Directory.EnumerateFiles(Folder, $"{next:0000}.*").Any());
+                if (next > 9999) throw new InvalidOperationException("No free four-digit numbers left (0001-9999).");
+                number = next;
+                numbers.TryAdd(baseStem, number);
+            }
+            var suffix = stem[baseStem.Length..].ToLowerInvariant(); // "", "_part1", "_part2" or "_print"
+            plan.Add(new RenameItem(Path.GetFileName(f), $"{number:0000}{suffix}{Path.GetExtension(f).ToLowerInvariant()}"));
         }
         if (dryRun || plan.Count == 0) return plan;
 
         foreach (var item in plan) File.Move(Path.Combine(Folder, item.From), Path.Combine(Folder, item.To));
+        RecordNumber(next);
 
         var map = Path.Combine(paths.DataDir, "artworks-rename-map.csv");
         var sb = new StringBuilder();
@@ -299,6 +386,13 @@ public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
         foreach (var item in plan) sb.AppendLine($"\"{item.To}\",\"{item.From.Replace("\"", "\"\"")}\"");
         File.AppendAllText(map, sb.ToString(), new UTF8Encoding(true));
         return plan;
+    }
+
+    /// <summary>Size and other details of one artwork; throws if it cannot be decoded.</summary>
+    public ArtworkInfo Info(string file)
+    {
+        var info = GetInfo(Resolve(file));
+        return info.Error == null ? info : throw new InvalidDataException(info.Error);
     }
 
     public string? EnsureThumb(string file)

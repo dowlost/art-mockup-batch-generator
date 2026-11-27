@@ -21,6 +21,8 @@
           "y": 950.7505032939159
         }
       ],
+      "frameCount": 1,
+      "corners2": [],
       "settings": {
         "fitMode": "cover",
         "matteColor": "#ffffff",
@@ -51,6 +53,8 @@
           "y": 1081.7349833658557
         }
       ],
+      "frameCount": 1,
+      "corners2": [],
       "settings": {
         "fitMode": "cover",
         "matteColor": "#ffffff",
@@ -81,6 +85,8 @@
           "y": 1205.6009429463852
         }
       ],
+      "frameCount": 1,
+      "corners2": [],
       "settings": {
         "fitMode": "cover",
         "matteColor": "#ffffff",
@@ -111,6 +117,8 @@
           "y": 695
         }
       ],
+      "frameCount": 1,
+      "corners2": [],
       "settings": {
         "fitMode": "cover",
         "matteColor": "#ffffff",
@@ -141,6 +149,8 @@
           "y": 644
         }
       ],
+      "frameCount": 1,
+      "corners2": [],
       "settings": {
         "fitMode": "cover",
         "matteColor": "#ffffff",
@@ -171,6 +181,8 @@
           "y": 806
         }
       ],
+      "frameCount": 1,
+      "corners2": [],
       "settings": {
         "fitMode": "cover",
         "matteColor": "#ffffff",
@@ -201,6 +213,8 @@
           "y": 597.0102405208933
         }
       ],
+      "frameCount": 1,
+      "corners2": [],
       "settings": {
         "fitMode": "cover",
         "matteColor": "#ffffff",
@@ -229,6 +243,253 @@
         {
           "x": 331.00014622411436,
           "y": 523.1020552800248
+        }
+      ],
+      "frameCount": 1,
+      "corners2": [],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "cenario1-duplo-horizontal",
+      "image": "cenario1-duplo-horizontal.png",
+      "corners": [
+        {
+          "x": 328.47334320834483,
+          "y": 49.58324798770393
+        },
+        {
+          "x": 701.9022390319947,
+          "y": 49.02640035654995
+        },
+        {
+          "x": 702.0000830294108,
+          "y": 293.6778347218981
+        },
+        {
+          "x": 328.0517572813438,
+          "y": 293.7756688659409
+        }
+      ],
+      "frameCount": 2,
+      "corners2": [
+        {
+          "x": 328.3342641059332,
+          "y": 321.5115245996051
+        },
+        {
+          "x": 701.4974191178467,
+          "y": 321.3990032943653
+        },
+        {
+          "x": 700.9910764312181,
+          "y": 563.7609585717951
+        },
+        {
+          "x": 328.22173217752527,
+          "y": 564.0985146971911
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "cenario1-duplo-vertical",
+      "image": "cenario1-duplo-vertical.png",
+      "corners": [
+        {
+          "x": 390.71044981382687,
+          "y": 452.9696632664604
+        },
+        {
+          "x": 932.7995172669189,
+          "y": 453.17169208229154
+        },
+        {
+          "x": 932.6421456514882,
+          "y": 1282.012907025073
+        },
+        {
+          "x": 389.67698847713496,
+          "y": 1282.3918699764602
+        }
+      ],
+      "frameCount": 2,
+      "corners2": [
+        {
+          "x": 1013.6381716761521,
+          "y": 453.2649788437825
+        },
+        {
+          "x": 1551.911425229429,
+          "y": 453.24332311472483
+        },
+        {
+          "x": 1551.5941797165244,
+          "y": 1282.1318231072053
+        },
+        {
+          "x": 1013.3310517271573,
+          "y": 1282.6799667362611
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "cenario2-duplo-horizontal",
+      "image": "cenario2-duplo-horizontal.png",
+      "corners": [
+        {
+          "x": 449.3487970409381,
+          "y": 112.46451354959879
+        },
+        {
+          "x": 1389.4616066290512,
+          "y": 112.98528133956488
+        },
+        {
+          "x": 1389.1318674927559,
+          "y": 766.0069550017786
+        },
+        {
+          "x": 449.0289235738093,
+          "y": 766.2008883365346
+        }
+      ],
+      "frameCount": 2,
+      "corners2": [
+        {
+          "x": 448.16970669646514,
+          "y": 906.3179807157661
+        },
+        {
+          "x": 1388.799481917243,
+          "y": 905.9582332812379
+        },
+        {
+          "x": 1387.768821420846,
+          "y": 1573.4133940624367
+        },
+        {
+          "x": 448.2198236165582,
+          "y": 1573.4822382314997
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "cenario2-duplo-vertical",
+      "image": "cenario2-duplo-vertical.png",
+      "corners": [
+        {
+          "x": 408.8402112599343,
+          "y": 382.23608042487103
+        },
+        {
+          "x": 950.1658983420217,
+          "y": 382.44012728365215
+        },
+        {
+          "x": 950.026415064157,
+          "y": 1086.929449877165
+        },
+        {
+          "x": 408.87457272387087,
+          "y": 1087.8681815836992
+        }
+      ],
+      "frameCount": 2,
+      "corners2": [
+        {
+          "x": 1069.2971319095868,
+          "y": 382.21000204553155
+        },
+        {
+          "x": 1610.6643060224012,
+          "y": 382.41985488399456
+        },
+        {
+          "x": 1610.809379907052,
+          "y": 1086.7878249913554
+        },
+        {
+          "x": 1069.333892271843,
+          "y": 1087.9971146055618
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "cenario3-duplo-horizontal",
+      "image": "cenario3-duplo-horizontal.png",
+      "corners": [
+        {
+          "x": 619.2134049784612,
+          "y": 63.900833184162245
+        },
+        {
+          "x": 1448.4911086202667,
+          "y": 64.84933175139571
+        },
+        {
+          "x": 1448.1960548439192,
+          "y": 494.29482114638824
+        },
+        {
+          "x": 619.1840656443013,
+          "y": 494.61288593554576
+        }
+      ],
+      "frameCount": 2,
+      "corners2": [
+        {
+          "x": 619.0359064484453,
+          "y": 566.0153984718544
+        },
+        {
+          "x": 1447.862666103667,
+          "y": 566.8795621019086
+        },
+        {
+          "x": 1447.462519770754,
+          "y": 999.2184835498146
+        },
+        {
+          "x": 619.4504678181225,
+          "y": 999.44113204856
         }
       ],
       "settings": {
@@ -261,12 +522,14 @@
           "y": 621
         }
       ],
+      "frameCount": 1,
+      "corners2": [],
       "settings": {
+        "fitMode": "cover",
         "matteColor": "#ffffff",
         "lightingStrength": 0.8,
-        "edgeFeatherPx": 1,
-        "fitMode": "cover",
-        "glareStrength": 0
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
       },
       "expectedAspectRatio": null
     },
@@ -291,12 +554,14 @@
           "y": 533
         }
       ],
+      "frameCount": 1,
+      "corners2": [],
       "settings": {
+        "fitMode": "cover",
         "matteColor": "#ffffff",
         "lightingStrength": 0.8,
-        "edgeFeatherPx": 1,
-        "fitMode": "cover",
-        "glareStrength": 0
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
       },
       "expectedAspectRatio": null
     }

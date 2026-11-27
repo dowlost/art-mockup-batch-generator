@@ -1,7 +1,8 @@
 # Art Mockup Batch Generator (.NET)
 
 Places your artwork into the blank frames of room photos ("scenes") and renders mockups in bulk: still images and
-zoom-in videos. Deterministic compositing (perspective warp + lighting blend) — no AI image generation. See [PRD.md](PRD.md).
+zoom-in videos, and prepares the print files. The mockups are deterministic compositing (perspective warp + lighting
+blend) — no AI image generation. See [PRD.md](PRD.md).
 
 ## Run
 
@@ -17,17 +18,66 @@ Videos need **ffmpeg**: put `ffmpeg.exe` next to the app, install it (`winget in
 ## Workflow
 
 1. **Scenes** – upload a room photo (or drop it into `data/scenes/`), click the 4 corners of the blank frame area
-   (TL → TR → BR → BL), tune fit mode / lighting / glare / feather, preview live, **Save**.
+   (TL → TR → BR → BL), tune fit mode / lighting / glare / feather, preview live, **Save**. For a photo with two frames,
+   set **Frames in this photo** to 2 and click 4 corners for frame 1, then 4 for frame 2 (the settings apply to both).
 2. **Artworks** – put files in `data/artworks/` (or point to another folder), tick the ones to include.
    Files are named `0001.png`, `0002.png`, … The **Rename new artworks to 0000** button renames every file that is not
-   already four digits to the next free numbers (e.g. after `0047`, new files become `0048`, `0049`, …; oldest first) and
+   already four digits to the next numbers (e.g. after `0047`, new files become `0048`, `0049`, …; oldest first) and
    records the old names in `data/artworks-rename-map.csv`.
 3. **Generate** – one list of scenes with two columns: tick a scene under **Images** for still mockups and/or under
    **Videos** for the zoom video. Press **Generate**. Everything goes into one flat folder, `data/output/`:
    `0001__<scene>.jpg` and `0001__<scene>.mp4` (the video adds `_loop` when the zoom-back-out option is on).
    Existing files are skipped unless *Overwrite* is on. Failures are listed and never stop the batch.
 
-Artwork files are only ever read (except by the rename button), never modified.
+Existing artwork files are never modified (the rename button only renames them; the *Print files* tab adds new ones).
+
+### Artwork numbers
+
+The artworks folder is **not tracked by git** (the files are large), so keep your own backup of it.
+`data/artworks-counter.json` is tracked and holds the highest number used. The app raises it whenever it lists or
+renames artworks, and renaming continues after it, so a number is never reused even if its file is gone or you are on
+another computer. Commit it together with the rename map.
+
+### Two-frame scenes
+
+Scenes with 2 frames don't use the ticked artworks. Instead, add one or more **Two-frame pairs** on the Generate tab:
+an artwork for each frame, or *Split Frame 1 artwork across both* to show a diptych (left/top half goes to the left/top
+frame, with the same centred cut as the print export). Each pair gives one image and/or video per scene, named
+`0001+0002__<scene>` or `0001-split__<scene>`. The zoom video ends on the area covering both frames.
+
+### Print files
+
+The **Print files** tab prepares an artwork for printing and saves the result in the artworks folder, keeping the
+artwork's name:
+
+| Layout | Files | Art on each print | File size with border |
+|---|---|---|---|
+| Not split | `0001_print` | 60×90 cm portrait, 90×60 cm landscape | 61×91 / 91×61 cm |
+| Side by side (whole art 4:3) | `0001_part1`, `0001_part2` | two 60×90 cm | 61×91 cm each |
+| Top and bottom (whole art 3:4) | `0001_part1`, `0001_part2` | two 90×60 cm | 91×61 cm each |
+
+- Every print gets a **0.5 cm white border** on each side, as room for positioning, cutting and framing.
+- The artwork is cropped to the layout's shape (centred; *Crop position* moves the cut).
+- **Original pixels** never resamples: with PNG output the art inside the border is pixel-identical to the source.
+  **150 / 200 / 300 DPI** resizes the whole crop once, then cuts it.
+- Files carry the DPI for the print size, keep an embedded RGB colour profile, and PNG keeps 16-bit depth.
+- A plain resize cannot add detail. The tab warns when the artwork has less than 150 DPI of real detail at print size.
+- On a 24-inch (609.6 mm) roll, a 61 cm wide file shows about 4.8 mm of white on each side. Print at 100% size.
+- No allowance is made for the gap between two frames.
+- Print files are ordinary artworks afterwards. The rename button leaves them alone. Exporting again asks first, then
+  replaces them. Mockups of a print file include its white border; use the original artwork for mockups.
+
+#### AI upscale (Upscayl)
+
+Install [Upscayl](https://github.com/upscayl/upscayl) and tick **AI upscale** (on by default when found). When a DPI
+choice needs more pixels than the artwork has, the crop is enlarged 4x with Upscayl's **Standard** model, matched back
+to the source's brightness and colour, then resized to the print size. For a 2688×1792 artwork, 4x gives about 300 DPI
+not split and about 200 DPI side by side. The added detail is generated by the model, so check the files before
+printing. It works in 8-bit and needs a Vulkan-capable graphics card.
+
+The app looks in the default install folders; set `ARTMOCKUPS_UPSCAYL` to Upscayl's `resources` folder otherwise.
+Upscayl is a separate AGPL-licensed program and is not shipped with this app. Check the licence of the model you use
+before selling prints made with it.
 
 ### Zoom videos
 
@@ -44,8 +94,12 @@ full view into the artwork. Because the frame position is known exactly, the vid
 ```
 Program.cs                 minimal API + static frontend
 Services/Compositor.cs     PreparedScene: mask, shading map, glare, warp, blend
-Services/Stores.cs         scenes.json, config.json, artwork library + thumbnails + renaming
+Services/Stores.cs         scenes.json, config.json, artwork library + thumbnails + numbering + renaming
 Services/BatchService.cs   parallel background batch with cancel/skip/errors
+Services/Mockup.cs         one- and two-frame mockups, artwork pairs, output names
+Services/DiptychSplit.cs   print files: whole or split artwork with white border
+Services/PrintMetadata.cs  DPI and colour profile tags for the print files
+Services/Upscayl.cs        AI upscaling through an installed Upscayl
 Services/ZoomCamera.cs     virtual camera for the zoom videos
 Services/ZoomVideos.cs     zoom-video jobs (ffmpeg encode, progress, cancel)
 wwwroot/                   vanilla JS frontend (canvas corner picker)

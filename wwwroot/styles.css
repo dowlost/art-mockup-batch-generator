@@ -29,8 +29,8 @@ label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--
 label.inline input[type=text] { width: auto; }
 output { float: right; color: var(--ink); }
 .panel { display: grid; grid-template-columns: 220px 1fr 300px; gap: 12px; padding: 12px; height: calc(100vh - 56px); }
-.panel[hidden] { display: none; }
 .panel.col { display: block; height: auto; }
+.panel[hidden] { display: none; } /* after .col, or the column panels would never hide */
 .side { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow: auto; }
 .stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
@@ -72,3 +72,9 @@ code { background: #8882; padding: 1px 4px; border-radius: 3px; }
 .genHead { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
 .genHead span { text-align: center; font-size: 13px; }
 button.mini { padding: 1px 8px; font-size: 12px; margin: 2px 2px 0; }
+
+label[hidden], #pairBox[hidden], .empty[hidden] { display: none; }
+.pairRow label.inline { flex: 1; min-width: 220px; white-space: nowrap; }
+
+/* split for print */
+.spPreview img { max-height: 65vh; }
