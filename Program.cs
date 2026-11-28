@@ -18,6 +18,7 @@ builder.Services.AddSingleton<BatchService>();
 builder.Services.AddSingleton<ZoomVideoService>();
 builder.Services.AddSingleton<Upscayl>();
 builder.Services.AddSingleton<SplitService>();
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 201_000_000);
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o => o.MultipartBodyLengthLimit = 200_000_000);
 
 var app = builder.Build();
@@ -31,7 +32,7 @@ app.UseExceptionHandler(errApp => errApp.Run(async ctx =>
         ArgumentException or InvalidDataException or JsonException or InvalidOperationException => 400,
         _ => 500,
     };
-    await ctx.Response.WriteAsJsonAsync(new { error = ex?.Message ?? "Unexpected error." });
+    await ctx.Response.WriteAsJsonAsync(new { error = ex?.Message ?? "Erro inesperado." });
 }));
 app.UseDefaultFiles();
 // Always revalidate the UI files so a rebuilt app.js/index.html is never served stale from the browser cache.
@@ -41,12 +42,15 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 var api = app.MapGroup("/api");
+api.MapGet("/upscayl", (Upscayl upscayl) => upscayl.Capabilities());
 
 // ---------- config ----------
 api.MapGet("/config", (ConfigStore cfg, ArtworkLibrary lib, AppPaths paths) => new
 {
     artworkFolder = lib.Folder,
     outputFolder = paths.OutputDir,
+    supportsVideoResume = true,
+    supportsUpscayl = true,
 });
 
 api.MapPut("/config", (ConfigPatch p, ConfigStore cfg, ArtworkLibrary lib, AppPaths paths) =>
@@ -54,7 +58,7 @@ api.MapPut("/config", (ConfigPatch p, ConfigStore cfg, ArtworkLibrary lib, AppPa
     var c = cfg.Current;
     if (p.ArtworkFolder != null)
     {
-        if (!Directory.Exists(paths.Resolve(p.ArtworkFolder))) throw new DirectoryNotFoundException($"Folder not found: {p.ArtworkFolder}");
+        if (!Directory.Exists(paths.Resolve(p.ArtworkFolder))) throw new DirectoryNotFoundException($"Pasta não encontrada — {p.ArtworkFolder}");
         c.ArtworkFolder = p.ArtworkFolder;
     }
     cfg.Save(c);
@@ -67,7 +71,7 @@ api.MapGet("/scenes", (SceneStore s) => s.List());
 api.MapPost("/scenes", async (HttpRequest req, SceneStore s) =>
 {
     var form = await req.ReadFormAsync();
-    var file = form.Files.GetFile("file") ?? throw new ArgumentException("Missing scene image file.");
+    var file = form.Files.GetFile("file") ?? throw new ArgumentException("Selecione a imagem do cenário.");
     var name = form["name"].ToString();
     if (string.IsNullOrWhiteSpace(name)) name = Path.GetFileNameWithoutExtension(file.FileName);
     await using var stream = file.OpenReadStream();
@@ -81,13 +85,21 @@ api.MapGet("/scenes/{name}/image", (string name, SceneStore s) =>
 {
     var scene = s.Get(name);
     var path = s.ImagePath(scene);
-    if (!File.Exists(path)) throw new FileNotFoundException("Scene image is missing.");
+    if (!File.Exists(path)) throw new FileNotFoundException("A imagem do cenário está ausente.");
     var mime = Path.GetExtension(path).ToLowerInvariant() switch { ".png" => "image/png", ".webp" => "image/webp", _ => "image/jpeg" };
     return Results.File(path, mime, lastModified: File.GetLastWriteTimeUtc(path));
 });
 
 // ---------- artworks ----------
 api.MapGet("/artworks", (ArtworkLibrary lib) => lib.List());
+api.MapPost("/artworks/import", async (HttpRequest req, ArtworkLibrary lib, CancellationToken cancellation) =>
+{
+    var form = await req.ReadFormAsync(cancellation);
+    var file = form.Files.GetFile("file") ?? throw new ArgumentException("Selecione uma imagem.");
+    await using var stream = file.OpenReadStream();
+    var name = await lib.ImportAsync(file.FileName, stream, cancellation);
+    return Results.Ok(new { file = name });
+});
 
 // renames artworks that are not named 0000 to the next free four-digit numbers (dryRun=true only reports the plan)
 api.MapPost("/artworks/normalize", (bool? dryRun, ArtworkLibrary lib) =>
@@ -121,7 +133,7 @@ api.MapPost("/contact-sheet", (SheetRequest r, SceneStore scenes, SceneImageCach
 {
     var scene = scenes.Get(r.Scene);
     var names = r.Artworks.Take(6).ToList();
-    if (names.Count == 0) throw new ArgumentException("Select at least one artwork.");
+    if (names.Count == 0) throw new ArgumentException("Selecione pelo menos uma arte.");
     scene.Corners = r.Corners ?? scene.Corners;
     scene.Corners2 = r.Corners2 ?? scene.Corners2;
     scene.FrameCount = r.FrameCount ?? scene.FrameCount;
@@ -182,6 +194,74 @@ static void OpenFolder(string dir)
 api.MapPost("/output/open", (AppPaths paths) => { OpenFolder(paths.OutputDir); return Results.Ok(); });
 
 // ---------- print files, and the plain split used by two-frame scenes ----------
+api.MapPost("/split/package", async (HttpRequest req) =>
+{
+    var form = await req.ReadFormAsync(req.HttpContext.RequestAborted);
+    var layout = DiptychSplit.ParseLayout(form["layout"]);
+    if (layout == SplitLayout.Full) throw new ArgumentException("Escolha Duplo-vertical ou Duplo-horizontal.");
+
+    var files = form.Files.GetFiles("first");
+    if (files.Count == 0) throw new ArgumentException("Selecione pelo menos uma imagem.");
+
+    var offset = double.TryParse(form["offset"], System.Globalization.CultureInfo.InvariantCulture, out var value) ? value : 0.5;
+    var stems = form["name"].Select(name => Names.ValidateSceneName(name)).ToArray();
+    if (stems.Length != files.Count || stems.Distinct(StringComparer.OrdinalIgnoreCase).Count() != files.Count)
+        throw new ArgumentException("Defina um nome diferente para cada arte.");
+    var suffixes = layout == SplitLayout.Side ? new[] { "esquerda", "direita" } : new[] { "cima", "baixo" };
+    var part = form["part"].ToString();
+    if (part is not ("" or "first" or "second") || (part.Length > 0 && files.Count != 1))
+        throw new ArgumentException("Seleção de partes inválida.");
+    var ct = req.HttpContext.RequestAborted;
+
+    async Task<Mat[]> Cut(IFormFile file)
+    {
+        if (!ArtworkLibrary.IsImage(file.FileName) || file.Length == 0)
+            throw new ArgumentException($"Selecione um PNG, JPEG ou WebP válido: {Path.GetFileName(file.FileName)}.");
+        using var bytes = new MemoryStream();
+        await file.CopyToAsync(bytes, ct);
+        using var art = ImageIO.Decode(bytes.ToArray(), file.FileName, ImreadModes.Color | ImreadModes.AnyDepth);
+        return DiptychSplit.Pieces(art, DiptychSplit.Plan(art.Width, art.Height, layout, offset));
+    }
+
+    string Name(int file, int piece) => $"{stems[file]}-{suffixes[piece]}.png";
+    if (part.Length > 0)
+    {
+        var pieces = await Cut(files[0]);
+        try
+        {
+            int index = part == "first" ? 0 : 1;
+            return Results.File(ImageIO.Encode(pieces[index], "png", 100), "image/png", Name(0, index));
+        }
+        finally { foreach (var piece in pieces) piece.Dispose(); }
+    }
+
+    var zipStream = new FileStream(Path.GetTempFileName(), FileMode.Create, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose);
+    try
+    {
+        using (var zip = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            for (int file = 0; file < files.Count; file++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var pieces = await Cut(files[file]);
+                try
+                {
+                    for (int i = 0; i < pieces.Length; i++)
+                    {
+                        var entry = zip.CreateEntry(Name(file, i), CompressionLevel.NoCompression);
+                        using var entryStream = entry.Open();
+                        entryStream.Write(ImageIO.Encode(pieces[i], "png", 100));
+                    }
+                }
+                finally { foreach (var piece in pieces) piece.Dispose(); }
+            }
+        }
+        zipStream.Position = 0;
+        return Results.File(zipStream, "application/zip", files.Count == 1 ? $"{stems[0]}.zip" : "artes-cortadas.zip");
+    }
+    catch { zipStream.Dispose(); throw; }
+});
+
 api.MapPost("/split/cut", (SplitRequest r, SplitService s) => s.Cut(r));
 api.MapGet("/split/cut-preview", (string artwork, string layout, double? offset, SplitService s) =>
     Results.File(s.CutPreview(artwork, layout, offset ?? 0.5), "image/jpeg"));
@@ -193,8 +273,9 @@ api.MapPost("/split/open", (ArtworkLibrary lib) => { OpenFolder(lib.Folder); ret
 // ---------- zoom videos (virtual camera over the composited scene) ----------
 api.MapPost("/videos/synthetic", (SyntheticRequest req, ZoomVideoService z) => Results.Ok(z.StartSynthetic(req).Snapshot()));
 api.MapPost("/videos/synthetic/info", (SyntheticRequest req, ZoomVideoService z) => Results.Ok(z.SyntheticInfo(req)));
-api.MapPost("/videos/synthetic/preview", async (SyntheticPreview pv, ZoomVideoService z) =>
-    Results.File(await z.PreviewSyntheticAsync(pv.Options, new ArtPair(pv.Artwork, pv.Artwork2), pv.T), "image/jpeg"));
+api.MapPost("/videos/synthetic/preview", async (SyntheticPreview pv, ZoomVideoService z, CancellationToken ct) =>
+    Results.File(await z.PreviewSyntheticAsync(pv.Options, new ArtPair(pv.Artwork, pv.Artwork2), pv.T, ct), "image/jpeg"));
+api.MapGet("/videos/jobs", (ZoomVideoService z) => z.Running is { } j ? Results.Ok(j.Snapshot()) : Results.NoContent());
 api.MapGet("/videos/jobs/{id}", (string id, ZoomVideoService z) => z.Get(id) is { } j ? Results.Ok(j.Snapshot()) : Results.NotFound());
 api.MapPost("/videos/jobs/{id}/cancel", (string id, ZoomVideoService z) => { z.Get(id)?.Cts.Cancel(); return Results.Accepted(); });
 

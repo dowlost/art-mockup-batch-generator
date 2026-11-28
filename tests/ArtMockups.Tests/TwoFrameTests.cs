@@ -123,10 +123,10 @@ public class TwoFrameTests
     {
         var single = new Scene { Name = "solo", Corners = Box(0, 0, 9, 9) };
         var duo = TwoFrames(Box(0, 0, 9, 9), Box(20, 0, 29, 9));
-        Assert.Contains("pair", Assert.Throws<ArgumentException>(() => MockupPlan.Build([duo], ["0001.png"], null)).Message);
-        Assert.Contains("artwork", Assert.Throws<ArgumentException>(() => MockupPlan.Build([single], null, [new("0001.png")])).Message);
+        Assert.Contains("arte ou par", Assert.Throws<ArgumentException>(() => MockupPlan.Build([duo], ["0001.png"], null)).Message);
+        Assert.Contains("uma arte", Assert.Throws<ArgumentException>(() => MockupPlan.Build([single], null, [new("0001.png")])).Message);
         duo.Corners2 = [];
-        Assert.Contains("both frames", Assert.Throws<ArgumentException>(() => MockupPlan.Build([duo], null, [new("0001.png")])).Message);
+        Assert.Contains("dois quadros", Assert.Throws<ArgumentException>(() => MockupPlan.Build([duo], null, [new("0001.png")])).Message);
     }
 
     [Fact]
@@ -171,7 +171,7 @@ public class TwoFrameTests
             var source = Path.Combine(library.Folder, "0003.png");
 
             // generation needs the split to exist, cut the way the frames are placed
-            Assert.Contains("0003.png (side by side)", Assert.Throws<ArgumentException>(() => batch.Start(request)).Message);
+            Assert.Contains("0003.png (lado a lado)", Assert.Throws<ArgumentException>(() => batch.Start(request)).Message);
             DiptychSplit.SplitForScenes(source, library.Folder, SplitLayout.Stacked);
             Assert.Equal(SplitLayout.Stacked, library.SceneSplit("0003.png")!.Value.Layout);
             Assert.Throws<ArgumentException>(() => batch.Start(request));

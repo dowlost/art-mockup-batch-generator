@@ -34,7 +34,7 @@ public static class PrintMetadata
     {
         if (IsPng(encoded)) return ApplyPng(encoded, dpiX, dpiY, icc);
         if (IsJpeg(encoded)) return ApplyJpeg(encoded, dpiX, dpiY, icc);
-        throw new ArgumentException("Only PNG and JPEG files can be tagged.");
+        throw new ArgumentException("Os metadados podem ser gravados em PNG e JPEG.");
     }
 
     // ---------- PNG ----------
@@ -151,7 +151,7 @@ public static class PrintMetadata
         if (icc != null)
         {
             int count = (icc.Length + MaxIccPerSegment - 1) / MaxIccPerSegment;
-            if (count > 255) throw new InvalidDataException("The colour profile is too large for a JPEG file. Export as PNG.");
+            if (count > 255) throw new InvalidDataException("O perfil de cor excede o limite do JPEG. Exporte como PNG.");
             Span<byte> header = stackalloc byte[4];
             for (int i = 0; i < count; i++)
             {

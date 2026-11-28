@@ -31,8 +31,8 @@ public sealed class ZoomCamera
 
     public ZoomCamera(int sceneWidth, int sceneHeight, IReadOnlyList<PointD> corners, bool portrait, double endFill, bool ease)
     {
-        if (corners.Count != 4) throw new ArgumentException("The scene needs its 4 frame corners set.");
-        if (endFill is < 0.3 or > 1.0) throw new ArgumentException("End fill must be between 0.3 and 1.0.");
+        if (corners.Count != 4) throw new ArgumentException("Marque os quatro cantos do quadro no cenário.");
+        if (endFill is < 0.3 or > 1.0) throw new ArgumentException("O preenchimento final deve ficar entre 30% e 100%.");
         SceneWidth = sceneWidth; SceneHeight = sceneHeight; Ease = ease;
         OutWidth = portrait ? ShortSide : LongSide;
         OutHeight = portrait ? LongSide : ShortSide;
@@ -58,7 +58,7 @@ public sealed class ZoomCamera
         double openW = (Dist(corners[0], corners[1]) + Dist(corners[3], corners[2])) / 2;
         double openH = (Dist(corners[0], corners[3]) + Dist(corners[1], corners[2])) / 2;
         _cx1 = corners.Average(p => p.X); _cy1 = corners.Average(p => p.Y);
-        _w1 = Math.Clamp(Math.Max(openW / endFill, openH * _aspect / endFill), 32, _w0);
+        _w1 = Math.Clamp(Math.Max(openW / endFill, openH * _aspect / endFill), Math.Min(32, _w0), _w0);
     }
 
     static double Smooth(double t) => t * t * (3 - 2 * t);

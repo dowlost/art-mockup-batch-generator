@@ -14,3 +14,6 @@ data/artworks/
 ffmpeg.exe
 data/videos-in/
 data/videos-out/
+
+# Motor portátil do Upscayl, preparado pelo script
+/tools/upscayl/

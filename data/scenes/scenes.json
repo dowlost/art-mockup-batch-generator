@@ -66,23 +66,23 @@
     },
     {
       "name": "cenario3-horizontal",
-      "image": "cenario3-horizontal.png",
+      "image": "cenario3-horizontal-vaso-no-canto.png",
       "corners": [
         {
-          "x": 539.4915689193999,
-          "y": 625.0719901343101
+          "x": 330,
+          "y": 382
         },
         {
-          "x": 1480.6632971334875,
-          "y": 624.640903153619
+          "x": 906,
+          "y": 382
         },
         {
-          "x": 1482.118437843456,
-          "y": 1205.6669256640826
+          "x": 906,
+          "y": 737
         },
         {
-          "x": 539.4424700840269,
-          "y": 1205.6009429463852
+          "x": 330,
+          "y": 737
         }
       ],
       "frameCount": 1,
@@ -162,23 +162,23 @@
     },
     {
       "name": "cenario3-vertical",
-      "image": "cenario3-vertical.png",
+      "image": "cenario3-vertical-vaso-no-canto.png",
       "corners": [
         {
-          "x": 418,
-          "y": 282
+          "x": 448,
+          "y": 278
         },
         {
-          "x": 766,
-          "y": 282
+          "x": 794,
+          "y": 278
         },
         {
-          "x": 766,
-          "y": 806
+          "x": 794,
+          "y": 790
         },
         {
-          "x": 418,
-          "y": 806
+          "x": 448,
+          "y": 790
         }
       ],
       "frameCount": 1,
@@ -307,42 +307,42 @@
     },
     {
       "name": "cenario1-duplo-vertical",
-      "image": "cenario1-duplo-vertical.png",
+      "image": "cenario1-duplo-vertical-vaso-no-canto.png",
       "corners": [
         {
-          "x": 390.71044981382687,
-          "y": 452.9696632664604
+          "x": 240,
+          "y": 277
         },
         {
-          "x": 932.7995172669189,
-          "y": 453.17169208229154
+          "x": 570,
+          "y": 277
         },
         {
-          "x": 932.6421456514882,
-          "y": 1282.012907025073
+          "x": 570,
+          "y": 784
         },
         {
-          "x": 389.67698847713496,
-          "y": 1282.3918699764602
+          "x": 240,
+          "y": 784
         }
       ],
       "frameCount": 2,
       "corners2": [
         {
-          "x": 1013.6381716761521,
-          "y": 453.2649788437825
+          "x": 621,
+          "y": 277
         },
         {
-          "x": 1551.911425229429,
-          "y": 453.24332311472483
+          "x": 948,
+          "y": 277
         },
         {
-          "x": 1551.5941797165244,
-          "y": 1282.1318231072053
+          "x": 948,
+          "y": 784
         },
         {
-          "x": 1013.3310517271573,
-          "y": 1282.6799667362611
+          "x": 621,
+          "y": 784
         }
       ],
       "settings": {
@@ -356,42 +356,42 @@
     },
     {
       "name": "cenario2-duplo-horizontal",
-      "image": "cenario2-duplo-horizontal.png",
+      "image": "cenario2-duplo-horizontal-vaso-no-canto.png",
       "corners": [
         {
-          "x": 449.3487970409381,
-          "y": 112.46451354959879
+          "x": 264,
+          "y": 66
         },
         {
-          "x": 1389.4616066290512,
-          "y": 112.98528133956488
+          "x": 813,
+          "y": 66
         },
         {
-          "x": 1389.1318674927559,
-          "y": 766.0069550017786
+          "x": 813,
+          "y": 448
         },
         {
-          "x": 449.0289235738093,
-          "y": 766.2008883365346
+          "x": 264,
+          "y": 448
         }
       ],
       "frameCount": 2,
       "corners2": [
         {
-          "x": 448.16970669646514,
-          "y": 906.3179807157661
+          "x": 264,
+          "y": 531
         },
         {
-          "x": 1388.799481917243,
-          "y": 905.9582332812379
+          "x": 813,
+          "y": 531
         },
         {
-          "x": 1387.768821420846,
-          "y": 1573.4133940624367
+          "x": 813,
+          "y": 922
         },
         {
-          "x": 448.2198236165582,
-          "y": 1573.4822382314997
+          "x": 264,
+          "y": 922
         }
       ],
       "settings": {
@@ -554,6 +554,311 @@
           "y": 533
         }
       ],
+      "frameCount": 1,
+      "corners2": [],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "cenario3-duplo-vertical",
+      "image": "cenario3-duplo-vertical-dois-quadros.png",
+      "corners": [
+        {
+          "x": 319,
+          "y": 383
+        },
+        {
+          "x": 603,
+          "y": 383
+        },
+        {
+          "x": 603,
+          "y": 765
+        },
+        {
+          "x": 319,
+          "y": 765
+        }
+      ],
+      "frameCount": 2,
+      "corners2": [
+        {
+          "x": 655,
+          "y": 383
+        },
+        {
+          "x": 938,
+          "y": 383
+        },
+        {
+          "x": 938,
+          "y": 765
+        },
+        {
+          "x": 655,
+          "y": 765
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "jacare-duplo-horizontal",
+      "image": "jacare-duplo-horizontal-dois-quadros.png",
+      "corners": [
+        {
+          "x": 156,
+          "y": 183
+        },
+        {
+          "x": 502,
+          "y": 183
+        },
+        {
+          "x": 502,
+          "y": 395
+        },
+        {
+          "x": 156,
+          "y": 395
+        }
+      ],
+      "frameCount": 2,
+      "corners2": [
+        {
+          "x": 156,
+          "y": 440
+        },
+        {
+          "x": 502,
+          "y": 440
+        },
+        {
+          "x": 502,
+          "y": 652
+        },
+        {
+          "x": 156,
+          "y": 652
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "jacare-duplo-vertical",
+      "image": "jacare-duplo-vertical-dois-quadros.png",
+      "corners": [
+        {
+          "x": 74,
+          "y": 235
+        },
+        {
+          "x": 324,
+          "y": 230
+        },
+        {
+          "x": 324,
+          "y": 596
+        },
+        {
+          "x": 74,
+          "y": 596
+        }
+      ],
+      "frameCount": 2,
+      "corners2": [
+        {
+          "x": 368,
+          "y": 229
+        },
+        {
+          "x": 621,
+          "y": 225
+        },
+        {
+          "x": 621,
+          "y": 596
+        },
+        {
+          "x": 368,
+          "y": 596
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "detalhes-duplo-horizontal",
+      "image": "detalhes-duplo-horizontal-espacado.png",
+      "corners": [
+        {
+          "x": 474,
+          "y": 130
+        },
+        {
+          "x": 778,
+          "y": 130
+        },
+        {
+          "x": 778,
+          "y": 318
+        },
+        {
+          "x": 474,
+          "y": 318
+        }
+      ],
+      "frameCount": 2,
+      "corners2": [
+        {
+          "x": 474,
+          "y": 358
+        },
+        {
+          "x": 778,
+          "y": 358
+        },
+        {
+          "x": 778,
+          "y": 546
+        },
+        {
+          "x": 474,
+          "y": 546
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "detalhes-duplo-vertical",
+      "image": "detalhes-duplo-vertical-espacado.png",
+      "corners": [
+        {
+          "x": 392,
+          "y": 203
+        },
+        {
+          "x": 606,
+          "y": 203
+        },
+        {
+          "x": 606,
+          "y": 522
+        },
+        {
+          "x": 392,
+          "y": 522
+        }
+      ],
+      "frameCount": 2,
+      "corners2": [
+        {
+          "x": 645,
+          "y": 203
+        },
+        {
+          "x": 859,
+          "y": 203
+        },
+        {
+          "x": 859,
+          "y": 522
+        },
+        {
+          "x": 645,
+          "y": 522
+        }
+      ],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "detalhes-duplo-horizontal-dois-quadros",
+      "image": "detalhes-duplo-horizontal-dois-quadros.png",
+      "corners": [],
+      "frameCount": 1,
+      "corners2": [],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "detalhes-duplo-horizontal-quadros-maiores",
+      "image": "detalhes-duplo-horizontal-quadros-maiores.png",
+      "corners": [],
+      "frameCount": 1,
+      "corners2": [],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "detalhes-duplo-horizontal-acima-do-sofa",
+      "image": "detalhes-duplo-horizontal-acima-do-sofa.png",
+      "corners": [],
+      "frameCount": 1,
+      "corners2": [],
+      "settings": {
+        "fitMode": "cover",
+        "matteColor": "#ffffff",
+        "lightingStrength": 0.8,
+        "glareStrength": 0,
+        "edgeFeatherPx": 1
+      },
+      "expectedAspectRatio": null
+    },
+    {
+      "name": "detalhes-duplo-vertical-dois-quadros",
+      "image": "detalhes-duplo-vertical-dois-quadros.png",
+      "corners": [],
       "frameCount": 1,
       "corners2": [],
       "settings": {

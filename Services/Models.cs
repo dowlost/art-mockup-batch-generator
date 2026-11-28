@@ -17,9 +17,9 @@ public class SceneSettings
     {
         var fit = (FitMode ?? "cover").ToLowerInvariant();
         if (fit is not ("cover" or "contain" or "stretch"))
-            throw new ArgumentException($"Invalid fit mode '{FitMode}'. Use cover, contain or stretch.");
+            throw new ArgumentException($"Modo de encaixe inválido '{FitMode}'. Use cover, contain ou stretch.");
         if (!Regex.IsMatch(MatteColor ?? "", "^#[0-9a-fA-F]{6}$"))
-            throw new ArgumentException($"Invalid matte color '{MatteColor}'. Use #rrggbb.");
+            throw new ArgumentException($"Cor da margem inválida '{MatteColor}'. Use #rrggbb.");
         return new SceneSettings
         {
             FitMode = fit,
@@ -101,7 +101,7 @@ public static class Names
     {
         name = name?.Trim() ?? "";
         if (!SafeScene.IsMatch(name))
-            throw new ArgumentException("Scene name must be 1-60 characters: letters, digits, spaces, '-' or '_'.");
+            throw new ArgumentException("Use de 1 a 60 caracteres no nome do cenário. São aceitos letras, números, espaços, '-' e '_'.");
         return name;
     }
 

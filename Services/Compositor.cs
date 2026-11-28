@@ -7,7 +7,7 @@ public static class ImageIO
     /// <summary>Decodes an image (EXIF orientation is applied by OpenCV). Unicode-safe paths.</summary>
     public static Mat Load(string path)
     {
-        if (!File.Exists(path)) throw new FileNotFoundException($"File not found: {Path.GetFileName(path)}");
+        if (!File.Exists(path)) throw new FileNotFoundException($"Arquivo não encontrado — {Path.GetFileName(path)}");
         return Decode(File.ReadAllBytes(path), Path.GetFileName(path), ImreadModes.Color);
     }
 
@@ -17,7 +17,7 @@ public static class ImageIO
         if (mat.Empty())
         {
             mat.Dispose();
-            throw new InvalidDataException($"Cannot decode image '{name}' (corrupt or unsupported).");
+            throw new InvalidDataException($"Não foi possível abrir a imagem '{name}'. O arquivo está corrompido ou tem um formato incompatível.");
         }
         return mat;
     }
@@ -33,7 +33,9 @@ public static class ImageIO
             ? jpegQuality >= 98
                 ? new[] { new ImageEncodingParam(ImwriteFlags.JpegQuality, jpegQuality), new ImageEncodingParam(JpegSamplingFactor, 0x111111) }
                 : new[] { new ImageEncodingParam(ImwriteFlags.JpegQuality, jpegQuality) }
-            : Array.Empty<ImageEncodingParam>();
+            : ext.Equals(".webp", StringComparison.OrdinalIgnoreCase)
+                ? new[] { new ImageEncodingParam(ImwriteFlags.WebPQuality, jpegQuality) }
+                : Array.Empty<ImageEncodingParam>();
         Cv2.ImEncode(ext, img, out var buf, prms);
         return buf;
     }
@@ -49,7 +51,7 @@ public static class ImageIO
         if (maxBytes <= 0 || bytes.Length <= maxBytes) return bytes;
 
         bool jpeg = ext.TrimStart('.').Equals("jpg", StringComparison.OrdinalIgnoreCase);
-        if (jpeg)
+        if (jpeg || ext.TrimStart('.').Equals("webp", StringComparison.OrdinalIgnoreCase))
         {
             for (int q = jpegQuality - 4; q >= 60; q -= 4)
             {
@@ -73,7 +75,7 @@ public static class ImageIO
             }
         }
         finally { current.Dispose(); }
-        throw new InvalidDataException($"Could not get the image under {maxBytes / 1_000_000.0:0.#} MB.");
+        throw new InvalidDataException($"Não foi possível reduzir a imagem para menos de {maxBytes / 1_000_000.0:0.#} MB.");
     }
 
     /// <summary>Atomic save: write to a temp file and move into place. maxBytes 0 = no size limit.</summary>
@@ -337,13 +339,13 @@ public sealed class PreparedScene : IDisposable
     public static Point2f[] ValidateCorners(IReadOnlyList<PointD>? corners, int width, int height)
     {
         if (corners == null || corners.Count != 4)
-            throw new ArgumentException("This scene has no corners yet. Click the 4 corners of the blank frame area first.");
+            throw new ArgumentException("Marque os quatro cantos da área do quadro neste cenário.");
         var pts = new Point2f[4];
         for (int i = 0; i < 4; i++)
         {
             var c = corners[i];
             if (!double.IsFinite(c.X) || !double.IsFinite(c.Y) || c.X < 0 || c.Y < 0 || c.X > width || c.Y > height)
-                throw new ArgumentException($"Corner {i + 1} is outside the image bounds ({width}x{height}).");
+                throw new ArgumentException($"O canto {i + 1} está fora dos limites da imagem ({width}×{height}).");
             pts[i] = new Point2f((float)c.X, (float)c.Y);
         }
         double sign = 0, area = 0;
@@ -351,13 +353,13 @@ public sealed class PreparedScene : IDisposable
         {
             var a = pts[i]; var b = pts[(i + 1) % 4]; var c = pts[(i + 2) % 4];
             double cross = (b.X - a.X) * (c.Y - b.Y) - (b.Y - a.Y) * (c.X - b.X);
-            if (Math.Abs(cross) < 1e-6) throw new ArgumentException("Corners are degenerate (three points in a line).");
+            if (Math.Abs(cross) < 1e-6) throw new ArgumentException("Três cantos estão alinhados. Ajuste os pontos para formar um quadrilátero.");
             if (sign == 0) sign = Math.Sign(cross);
             else if (Math.Sign(cross) != sign)
-                throw new ArgumentException("Corners must form a convex quadrilateral in order: top-left, top-right, bottom-right, bottom-left.");
+                throw new ArgumentException("Marque um quadrilátero convexo na ordem superior esquerdo, superior direito, inferior direito e inferior esquerdo.");
             area += a.X * b.Y - b.X * a.Y;
         }
-        if (Math.Abs(area) / 2 < 100) throw new ArgumentException("The frame area is too small.");
+        if (Math.Abs(area) / 2 < 100) throw new ArgumentException("A área do quadro é pequena demais.");
         return pts;
     }
 

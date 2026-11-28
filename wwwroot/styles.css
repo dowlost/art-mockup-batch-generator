@@ -66,16 +66,6 @@ code { background: #8882; padding: 1px 4px; border-radius: 3px; }
 
 .wideCard { grid-column: 1 / -1; }
 
-/* generate: scene table, columns Images, Videos, Scene name, all from the left */
-.genGrid { display: grid; grid-template-columns: 96px 96px minmax(0, 1fr); gap: 8px; align-items: center; padding: 7px 4px; }
-.genGrid input[type=checkbox] { justify-self: center; }
-.genHead { border-bottom: 2px solid var(--line); }
-.genHead span { text-align: center; font-size: 13px; }
-#genScenes .genGrid { border-bottom: 1px solid var(--line); }
-#genScenes .genGrid:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.genGrid.off span { color: var(--muted); opacity: .55; }
-button.mini { padding: 1px 8px; font-size: 12px; margin: 2px 2px 0; }
-
 /* generate: split confirmation for two-frame scenes */
 .splitList { display: flex; flex-wrap: wrap; gap: 10px; }
 .splitCard { width: 270px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -86,3 +76,39 @@ label[hidden], #pairBox[hidden], #splitBox[hidden], .empty[hidden] { display: no
 
 /* split for print */
 .spPreview img { max-height: 65vh; }
+
+header { flex-wrap: wrap; gap: 10px 18px; }
+#generationDialog { width: min(960px, calc(100% - 24px)); max-height: calc(100dvh - 24px); padding: 0; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+#generationDialog::backdrop { background: #0009; }
+.dialogBody { padding: clamp(12px, 3vw, 24px); gap: 14px; }
+.dialogHeader { position: sticky; top: 0; z-index: 1; background: var(--panel); padding-block: 8px; border-bottom: 1px solid var(--line); }
+.dialogHeader h2 { margin: 0; font-size: 18px; }
+.dialogHeader #toast { max-width: 100%; overflow-wrap: anywhere; }
+#generationDialog select { max-width: 100%; min-width: 0; }
+#generationDialog summary { cursor: pointer; }
+.batchArtList { max-height: 200px; overflow: auto; margin-top: 8px; overflow-wrap: anywhere; }
+.sceneGallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr)); gap: 8px; }
+.sceneGallery figure { margin: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.sceneGallery img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #111; }
+.sceneGallery figcaption { padding: 6px 8px; font-size: 12px; overflow-wrap: anywhere; }
+#synPv .pvBox:has(img[src]) span { display: none; }
+
+
+.upscaylPanel { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.upscaylPanel summary span { margin-inline-start: 6px; }
+.upscaylBody { margin-top: 10px; }
+.upscaylBody fieldset { padding: 0; margin: 0; border: 0; min-width: 0; }
+.upscaylBody p { margin: 0; }
+.upscaylGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr)); gap: 10px; margin: 10px 0; }
+.upscaylBody :disabled { opacity: .65; }
+
+.sceneFilterTitle { margin: 4px 0 0; }
+.videoGallery { grid-template-columns: repeat(auto-fill, minmax(min(145px, 100%), 1fr)); }
+
+#generationDialog .row > label { min-width: 0; max-width: 100%; }
+#generationDialog .splitCard { max-width: 100%; overflow-wrap: anywhere; }
+
+.cutDialog { width: min(100% - 32px, 550px); max-height: calc(100dvh - 32px); padding: 0; }
+.cutDialog::backdrop { background: #0008; }
+#cutPreviews:empty { display: none; }
+#cutPreviews img { max-height: 160px; }

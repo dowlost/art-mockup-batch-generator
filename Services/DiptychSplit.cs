@@ -53,7 +53,7 @@ public static class DiptychSplit
         "side" => SplitLayout.Side,
         "stacked" => SplitLayout.Stacked,
         "full" => SplitLayout.Full,
-        _ => throw new ArgumentException($"Invalid layout '{layout}'. Use full, side or stacked."),
+        _ => throw new ArgumentException($"Disposição inválida '{layout}'. Use full, side ou stacked."),
     };
 
     /// <summary>
@@ -63,8 +63,8 @@ public static class DiptychSplit
     /// </summary>
     public static SplitPlan Plan(int sourceWidth, int sourceHeight, SplitLayout layout, double offset = 0.5, int dpi = 0)
     {
-        if (dpi is not (0 or 150 or 200 or 300)) throw new ArgumentException("Resolution must be original, 150, 200 or 300 DPI.");
-        if (!double.IsFinite(offset)) throw new ArgumentException("Invalid crop position.");
+        if (dpi is not (0 or 150 or 200 or 300)) throw new ArgumentException("Escolha a resolução original, 150, 200 ou 300 DPI.");
+        if (!double.IsFinite(offset)) throw new ArgumentException("Posição de recorte inválida.");
         offset = Math.Clamp(offset, 0, 1);
 
         var (a, b) = layout switch
@@ -74,7 +74,7 @@ public static class DiptychSplit
             _ => sourceHeight > sourceWidth ? (2, 3) : (3, 2),
         };
         int k = Math.Min(sourceWidth / a, sourceHeight / b);
-        if (k < 1) throw new ArgumentException($"The artwork is too small to print ({sourceWidth}×{sourceHeight}).");
+        if (k < 1) throw new ArgumentException($"A arte é pequena demais para impressão ({sourceWidth}×{sourceHeight}).");
         int cw = a * k, ch = b * k;
         var crop = new Rect((int)Math.Round((sourceWidth - cw) * offset), (int)Math.Round((sourceHeight - ch) * offset), cw, ch);
 
@@ -130,7 +130,7 @@ public static class DiptychSplit
         Func<Mat, Mat>? upscale = null, bool overwrite = false)
     {
         var ext = (format ?? "").ToLowerInvariant();
-        if (ext is not ("png" or "jpg")) throw new ArgumentException("Format must be png or jpg.");
+        if (ext is not ("png" or "jpg")) throw new ArgumentException("Escolha o formato PNG ou JPEG.");
         return Write(sourcePath, outDir, layout, offset, dpi, ext, upscale, overwrite, PrintSuffixes(layout), border: true);
     }
 
@@ -140,7 +140,7 @@ public static class DiptychSplit
     /// </summary>
     public static List<SplitFile> SplitForScenes(string sourcePath, string outDir, SplitLayout layout, double offset = 0.5, bool overwrite = false)
     {
-        if (layout == SplitLayout.Full) throw new ArgumentException("A scene split is side by side or top and bottom.");
+        if (layout == SplitLayout.Full) throw new ArgumentException("Escolha o corte lado a lado ou um acima do outro.");
         return Write(sourcePath, outDir, layout, offset, 0, "png", null, overwrite, DerivedFiles.SceneParts, border: false);
     }
 
@@ -149,10 +149,10 @@ public static class DiptychSplit
     {
         var stem = Path.GetFileNameWithoutExtension(sourcePath);
         if (DerivedFiles.IsDerived(stem))
-            throw new ArgumentException($"'{Path.GetFileName(sourcePath)}' is a part or print file. Pick the original artwork.");
+            throw new ArgumentException($"'{Path.GetFileName(sourcePath)}' é um arquivo de recorte ou impressão. Escolha a arte original.");
         var old = DerivedFiles.Existing(outDir, stem, suffixes);
         if (old.Count > 0 && !overwrite)
-            throw new InvalidOperationException($"Already there: {string.Join(", ", old.Select(Path.GetFileName))}. Confirm replacing them.");
+            throw new InvalidOperationException($"Arquivos existentes — {string.Join(", ", old.Select(Path.GetFileName))}. Confirme a substituição.");
 
         var source = File.ReadAllBytes(sourcePath);
         using var art = ImageIO.Decode(source, Path.GetFileName(sourcePath), ImreadModes.Color | ImreadModes.AnyDepth);
@@ -173,7 +173,7 @@ public static class DiptychSplit
             else if (ai)
             {
                 if (art.Depth() != MatType.CV_8U)
-                    throw new ArgumentException("AI upscaling would reduce this 16-bit artwork to 8-bit. Untick AI upscale to keep its depth.");
+                    throw new ArgumentException("Desmarque a ampliação por IA para preservar os 16 bits da arte.");
                 using var own = crop.Clone();
                 using var enlarged = upscale!(own);
                 Resize(enlarged);

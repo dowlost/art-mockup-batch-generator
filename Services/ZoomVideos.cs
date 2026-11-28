@@ -42,7 +42,7 @@ public static class FfmpegRunner
             RedirectStandardError = true, RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true,
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
-        using var proc = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start {Path.GetFileName(exe)}.");
+        using var proc = Process.Start(psi) ?? throw new InvalidOperationException($"Não foi possível iniciar {Path.GetFileName(exe)}.");
         var err = new StringBuilder();
         proc.ErrorDataReceived += (_, e) => { if (e.Data != null && err.Length < 20000) err.AppendLine(e.Data); };
         proc.OutputDataReceived += (_, e) => { if (onFrame != null && ParseProgressFrame(e.Data) is { } n) onFrame(n); };
@@ -51,7 +51,13 @@ public static class FfmpegRunner
         try { await proc.WaitForExitAsync(ct); }
         catch (OperationCanceledException)
         {
-            try { proc.Kill(entireProcessTree: true); } catch { }
+            try
+            {
+                proc.Kill(entireProcessTree: true);
+                await proc.WaitForExitAsync();
+            }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { }
             throw;
         }
         return (proc.ExitCode, err.ToString());
@@ -60,7 +66,7 @@ public static class FfmpegRunner
     public static string Brief(string stderr)
     {
         var s = stderr.Trim();
-        return s.Length == 0 ? "no details" : s[..Math.Min(s.Length, 400)];
+        return s.Length == 0 ? "sem detalhes" : s[..Math.Min(s.Length, 400)];
     }
 }
 
@@ -68,7 +74,7 @@ public static class FfmpegRunner
 /// Zoom videos: the artwork is placed in a scene, then a virtual camera glides from the full view into the artwork.
 /// One video per (scene x artwork), written next to the still images in the output folder. Needs ffmpeg.
 /// </summary>
-public sealed class ZoomVideoService(AppPaths paths, ArtworkLibrary library, SceneStore scenes, SceneImageCache sceneImages)
+public sealed class ZoomVideoService(AppPaths paths, ArtworkLibrary library, SceneStore scenes, SceneImageCache sceneImages, Upscayl upscayl)
 {
     readonly ConcurrentDictionary<string, VideoJob> _jobs = new();
     public VideoJob? Get(string id) => _jobs.TryGetValue(id, out var j) ? j : null;
@@ -120,26 +126,34 @@ public sealed class ZoomVideoService(AppPaths paths, ArtworkLibrary library, Sce
     ZoomCamera CameraFor(Scene scene, Mat sceneImage, SyntheticRequest r)
     {
         var endFill = r.EndFill ?? 0.9;
-        return new ZoomCamera(sceneImage.Width, sceneImage.Height, scene.CameraTarget(),string.Equals(r.Orientation, "portrait", StringComparison.OrdinalIgnoreCase), endFill, r.Ease ?? true);
+
+        var width = r.Upscayl is { EntireMockup: true } options ? options.OutputWidth(sceneImage.Width) : sceneImage.Width;
+        var height = Math.Max(1, (int)Math.Round(width * (double)sceneImage.Height / sceneImage.Width));
+        var corners = scene.CameraTarget().Select(p => new PointD(p.X * width / sceneImage.Width, p.Y * height / sceneImage.Height)).ToArray();
+        return new ZoomCamera(width, height, corners, string.Equals(r.Orientation, "portrait", StringComparison.OrdinalIgnoreCase), endFill, r.Ease ?? true);
     }
 
     static string FirstScene(SyntheticRequest r) =>
-        r.Scene ?? r.Scenes?.FirstOrDefault() ?? throw new ArgumentException("Pick a scene.");
+        r.Scene ?? r.Scenes?.FirstOrDefault() ?? throw new ArgumentException("Selecione um cenário.");
 
     public object SyntheticInfo(SyntheticRequest r)
     {
+        upscayl.Validate(r.Upscayl);
         var scene = scenes.Get(FirstScene(r));
         var cam = CameraFor(scene, sceneImages.Get(scene), r);
         return new { outWidth = cam.OutWidth, outHeight = cam.OutHeight, endUpscale = cam.EndUpscale, startWidth = cam.StartBox.Width, endWidth = cam.EndBox.Width };
     }
 
-    public Task<byte[]> PreviewSyntheticAsync(SyntheticRequest r, ArtPair art, double t) => Task.Run(() =>
+    public Task<byte[]> PreviewSyntheticAsync(SyntheticRequest r, ArtPair art, double t, CancellationToken ct = default) => Task.Run(async () =>
     {
         var scene = scenes.Get(FirstScene(r));
+        upscayl.Validate(r.Upscayl);
         var img = sceneImages.Get(scene);
         var cam = CameraFor(scene, img, r);
         using var prepared = PreparedMockup.Create(img, scene);
-        using var composite = prepared.Render(library, art);
+        using var composite = r.Upscayl is { } options
+            ? await upscayl.RenderAsync(prepared, library, art, false, options, ct)
+            : prepared.Render(library, art);
         using var frame = cam.Render(composite, t);
         return ImageIO.Encode(frame, ".jpg", 90);
     });
@@ -147,16 +161,17 @@ public sealed class ZoomVideoService(AppPaths paths, ArtworkLibrary library, Sce
     /// <summary>One video per (scene x artwork or pair), written next to the still images in the output folder.</summary>
     public VideoJob StartSynthetic(SyntheticRequest req)
     {
-        var ffmpeg = FindFfmpeg() ?? throw new InvalidOperationException("ffmpeg was not found. Put ffmpeg.exe next to the app and restart.");
-        if (Running != null) throw new InvalidOperationException("A video job is already running.");
+        upscayl.Validate(req.Upscayl);
+        var ffmpeg = FindFfmpeg() ?? throw new InvalidOperationException("O FFmpeg não foi encontrado. Coloque ffmpeg.exe na pasta do aplicativo e reinicie.");
+        if (Running != null) throw new InvalidOperationException("Já existe uma geração de vídeo em andamento.");
         var names = (req.Scenes is { Count: > 0 } ? req.Scenes : req.Scene != null ? [req.Scene] : []).Distinct().ToList();
-        if (names.Count == 0) throw new ArgumentException("Select at least one scene for the videos.");
+        if (names.Count == 0) throw new ArgumentException("Selecione pelo menos um cenário para os vídeos.");
         var sceneList = names.Select(scenes.Get).ToList();
         var items = MockupPlan.Build(sceneList, req.Artworks, req.Pairs);
-        MockupPlan.RequireSplits(library, items);
+        if (!req.AllowAutomaticSplit) MockupPlan.RequireSplits(library, items);
         double seconds = req.Seconds ?? 5; int fps = req.Fps ?? 24;
-        if (seconds is < 1 or > 15) throw new ArgumentException("Duration must be between 1 and 15 seconds.");
-        if (fps is < 12 or > 60) throw new ArgumentException("Frame rate must be between 12 and 60.");
+        if (seconds is < 1 or > 15) throw new ArgumentException("A duração deve ficar entre 1 e 15 segundos.");
+        if (fps is < 12 or > 60) throw new ArgumentException("A taxa de quadros deve ficar entre 12 e 60.");
         int frameCount = Math.Max(2, (int)Math.Round(seconds * fps));
         foreach (var s in sceneList) CameraFor(s, sceneImages.Get(s), req); // validates the options before the job starts
 
@@ -190,7 +205,12 @@ public sealed class ZoomVideoService(AppPaths paths, ArtworkLibrary library, Sce
                         try
                         {
                             Directory.CreateDirectory(tmpDir);
-                            using var composite = prepared.Render(library, art, requireSplit: true);
+
+                            using var composite = req.Upscayl is { } options
+                                ? await upscayl.RenderAsync(prepared, library, art, !req.AllowAutomaticSplit, options, job.Cts.Token,
+                                    () => job.Current = $"Upscayl · {art.Label}")
+                                : prepared.Render(library, art, requireSplit: !req.AllowAutomaticSplit);
+                            job.Current = $"{art.Label} → {scene.Name}";
                             var po = new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 2, 1, 4), CancellationToken = job.Cts.Token };
                             await Parallel.ForAsync(0, frameCount, po, (i, ct) =>
                             {
@@ -209,7 +229,7 @@ public sealed class ZoomVideoService(AppPaths paths, ArtworkLibrary library, Sce
                             if (exit != 0)
                             {
                                 try { File.Delete(tmpOut); } catch { }
-                                throw new InvalidDataException("ffmpeg failed: " + FfmpegRunner.Brief(err));
+                                throw new InvalidDataException("Erro do FFmpeg — " + FfmpegRunner.Brief(err));
                             }
                             File.Move(tmpOut, output, overwrite: true);
                             Interlocked.Increment(ref job.Rendered);
@@ -244,4 +264,4 @@ public sealed class ZoomVideoService(AppPaths paths, ArtworkLibrary library, Sce
 /// <param name="Scene">Used by preview/info (one scene).</param>
 /// <param name="Scenes">Used by generate (one or more scenes).</param>
 /// <param name="Pairs">Used by two-frame scenes.</param>
-public record SyntheticRequest(string? Scene, List<string>? Scenes, List<string>? Artworks, double? Seconds, int? Fps, string? Orientation, double? EndFill, bool? Ease, bool Loop, bool Overwrite, List<ArtPair>? Pairs = null);
+public record SyntheticRequest(string? Scene, List<string>? Scenes, List<string>? Artworks, double? Seconds, int? Fps, string? Orientation, double? EndFill, bool? Ease, bool Loop, bool Overwrite, List<ArtPair>? Pairs = null, bool AllowAutomaticSplit = false, UpscaylOptions? Upscayl = null);

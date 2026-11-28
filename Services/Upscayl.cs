@@ -1,10 +1,13 @@
+using System.Collections.Concurrent;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text.Json;
 using OpenCvSharp;
 
 namespace ArtMockups;
 
 /// <summary>
-/// AI upscaling with the "Standard" model of a separately installed Upscayl (https://github.com/upscayl/upscayl),
-/// run as a command-line tool. Nothing of Upscayl is shipped with this app.
+/// Executa o motor local do Upscayl e reaproveita ampliações nos lotes e nas prévias.
 /// </summary>
 public sealed class Upscayl(AppPaths paths)
 {
@@ -12,15 +15,63 @@ public sealed class Upscayl(AppPaths paths)
     public const int Factor = 4;
     const long MaxSourcePixels = 40_000_000; // beyond this the 4x result needs many gigabytes of memory
 
-    public sealed record Install(string Exe, string ModelsDir);
 
-    /// <summary>ARTMOCKUPS_UPSCAYL (the install's "resources" folder), then the usual install folders.</summary>
-    public static Install? Find()
+    public sealed record Install(string Exe, string ModelsDir);
+    public sealed record ModelChoice(string Id, string Name, string? Alternate = null);
+    public static readonly IReadOnlyList<ModelChoice> Models =
+    [
+        new(Model, "Padrão"),
+        new("high-fidelity-4x", "Alta fidelidade", "hfa2k-4x"),
+        new("digital-art-4x", "Arte digital"),
+        new("remacri-4x", "Remacri"),
+        new("ultramix-balanced-4x", "Ultramix equilibrado"),
+        new("ultrasharp-4x", "UltraSharp"),
+        new("upscayl-lite-4x", "Leve"),
+    ];
+
+    readonly SemaphoreSlim _gpu = new(1);
+    readonly ConcurrentDictionary<(string Path, long Length, long Modified), string> _fingerprints = new();
+
+    static bool HasModel(string dir, string model) =>
+        File.Exists(Path.Combine(dir, model + ".bin")) && File.Exists(Path.Combine(dir, model + ".param"));
+
+    static string? ResolveModel(Install install, ModelChoice model) =>
+        HasModel(install.ModelsDir, model.Id) ? model.Id
+        : model.Alternate is { } alt && HasModel(install.ModelsDir, alt) ? alt : null;
+
+    public object Capabilities()
+    {
+        var install = Find(paths.Root);
+        return new { models = Models.Where(m => install != null && ResolveModel(install, m) != null)
+            .Select(m => new { m.Id, m.Name }).ToArray() };
+    }
+
+    public void Validate(UpscaylOptions? options)
+    {
+        if (options == null) return;
+        if (options.Scale is < 1 or > 16 || options.Width is < 1 or > 12000 ||
+            options.GpuId is < 0 || options.TileSize is < 0 or (> 0 and < 32))
+            throw new ArgumentException("Use uma escala de 1× a 16× e confira a largura, o ID da GPU e o tamanho dos blocos do Upscayl.");
+        GetModel(options);
+    }
+
+    (Install Install, string Model) GetModel(UpscaylOptions options)
+    {
+        var install = Find(paths.Root) ?? throw new InvalidOperationException("Motor portátil do Upscayl indisponível. Prepare a pasta tools/upscayl.");
+        var choice = Models.FirstOrDefault(m => m.Id == options.Model);
+        var model = choice == null ? null : ResolveModel(install, choice);
+        return (install, model ?? throw new ArgumentException("O modelo selecionado do Upscayl não está disponível."));
+    }
+
+    /// <summary>Localiza o motor configurado, portátil ou instalado.</summary>
+    public static Install? Find(string? root = null)
     {
         var exe = OperatingSystem.IsWindows() ? "upscayl-bin.exe" : "upscayl-bin";
         string?[] folders =
         [
             Environment.GetEnvironmentVariable("ARTMOCKUPS_UPSCAYL"),
+            Path.Combine(root ?? Directory.GetCurrentDirectory(), "tools", "upscayl"),
+            Path.Combine(AppContext.BaseDirectory, "tools", "upscayl"),
             Under(Environment.SpecialFolder.ProgramFiles, "Upscayl", "resources"),
             Under(Environment.SpecialFolder.LocalApplicationData, "Programs", "Upscayl", "resources"),
             "/Applications/Upscayl.app/Contents/Resources",
@@ -30,7 +81,7 @@ public sealed class Upscayl(AppPaths paths)
         {
             if (string.IsNullOrWhiteSpace(folder)) continue;
             var found = new Install(Path.Combine(folder, "bin", exe), Path.Combine(folder, "models"));
-            if (File.Exists(found.Exe) && File.Exists(Path.Combine(found.ModelsDir, Model + ".bin"))) return found;
+            if (File.Exists(found.Exe) && HasModel(found.ModelsDir, Model)) return found;
         }
         return null;
 
@@ -38,54 +89,129 @@ public sealed class Upscayl(AppPaths paths)
             Environment.GetFolderPath(root) is { Length: > 0 } r ? Path.Combine([r, .. parts]) : null;
     }
 
-    /// <summary>Returns the image enlarged exactly 4x, with the brightness and colour of the source.</summary>
-    public Mat Upscale(Mat source)
-    {
-        var install = Find() ?? throw new InvalidOperationException("Upscayl was not found. Install it, or untick AI upscale.");
-        if (source.Type() != MatType.CV_8UC3) throw new ArgumentException("AI upscaling works with 8-bit colour images only.");
-        if ((long)source.Width * source.Height > MaxSourcePixels)
-            throw new ArgumentException("This artwork is too large for AI upscaling. Untick AI upscale.");
 
+
+    public async Task<Mat> RenderAsync(PreparedMockup prepared, ArtworkLibrary library, ArtPair art,
+        bool requireSplit, UpscaylOptions options, CancellationToken ct, Action? started = null)
+    {
+        if (!options.EntireMockup)
+            return await prepared.RenderAsync(library, art, requireSplit, path => LoadAsync(path, options, ct, started));
+        using var mockup = prepared.Render(library, art, requireSplit);
+        return await EnlargeMockupAsync(mockup, options, ct, started);
+    }
+
+    public Mat Upscale(Mat source) =>
+        UpscaleAsync(source, new UpscaylOptions(), CancellationToken.None).GetAwaiter().GetResult();
+
+    public async Task<Mat> LoadAsync(string path, UpscaylOptions options, CancellationToken ct, Action? started = null)
+    {
+        var file = new FileInfo(path);
+        var key = _fingerprints.GetOrAdd((file.FullName, file.Length, file.LastWriteTimeUtc.Ticks), entry =>
+        {
+            using var stream = File.OpenRead(entry.Path);
+            return Convert.ToHexString(SHA256.HashData(stream));
+        });
+        return await CachedAsync(key, () => ImageIO.Decode(File.ReadAllBytes(path), file.Name,
+            ImreadModes.AnyDepth | ImreadModes.Color), options, ct, started);
+    }
+
+    public Task<Mat> EnlargeMockupAsync(Mat mockup, UpscaylOptions options, CancellationToken ct, Action? started = null)
+    {
+        var bytes = ImageIO.Encode(mockup, "png", 100);
+        return CachedAsync(Convert.ToHexString(SHA256.HashData(bytes)), mockup.Clone, options, ct, started);
+    }
+
+    async Task<Mat> CachedAsync(string imageHash, Func<Mat> load, UpscaylOptions options, CancellationToken ct, Action? started)
+    {
+        var (install, model) = GetModel(options);
+        var engine = new FileInfo(install.Exe);
+        var weights = new FileInfo(Path.Combine(install.ModelsDir, model + ".bin"));
+        var parameters = new FileInfo(Path.Combine(install.ModelsDir, model + ".param"));
+        var identity = JsonSerializer.Serialize(new { imageHash, options, model, install.Exe, install.ModelsDir,
+            engine.LastWriteTimeUtc, weights = weights.LastWriteTimeUtc, parameters = parameters.LastWriteTimeUtc });
+        var key = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(identity)));
+        var target = Path.Combine(paths.CacheDir, "upscayl", key + ".png");
+
+        await _gpu.WaitAsync(ct);
+        try
+        {
+            if (File.Exists(target)) return ImageIO.Load(target);
+            started?.Invoke();
+            using var source = load();
+            var result = await RunUpscaleAsync(source, options, install, model, ct);
+            try
+            {
+                ct.ThrowIfCancellationRequested();
+                ImageIO.Save(target, result, 100);
+                return result;
+            }
+            catch { result.Dispose(); throw; }
+        }
+        finally { _gpu.Release(); }
+    }
+
+    async Task<Mat> UpscaleAsync(Mat source, UpscaylOptions options, CancellationToken ct)
+    {
+        var (install, model) = GetModel(options);
+        await _gpu.WaitAsync(ct);
+        try { return await RunUpscaleAsync(source, options, install, model, ct, limitOutput: false); }
+        finally { _gpu.Release(); }
+    }
+
+    async Task<Mat> RunUpscaleAsync(Mat source, UpscaylOptions options, Install install, string model, CancellationToken ct, bool limitOutput = true)
+    {
+        if (source.Type() != MatType.CV_8UC3) throw new ArgumentException("A ampliação por IA exige imagens coloridas de 8 bits.");
+        ct.ThrowIfCancellationRequested();
         var dir = Path.Combine(paths.CacheDir, "upscale", Guid.NewGuid().ToString("N"));
         try
         {
+            var targetWidth = options.OutputWidth(source.Width);
+            var passes = options.DoublePass ? 2 : 1;
+            var maxInputPixels = (long)source.Width * source.Height * (options.DoublePass ? options.Scale * options.Scale : 1);
+            var outputPixels = targetWidth * (double)targetWidth * source.Height / source.Width;
+            if (maxInputPixels > MaxSourcePixels || (limitOutput && outputPixels > 128_000_000))
+                throw new ArgumentException("O resultado é grande demais para o Upscayl. Reduza a escala ou desative a ampliação dupla.");
+
             Directory.CreateDirectory(dir);
-            string input = Path.Combine(dir, "in.png"), output = Path.Combine(dir, "out.png");
+            var input = Path.Combine(dir, "in.png");
             File.WriteAllBytes(input, ImageIO.Encode(source, "png", 100));
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromMinutes(10));
+            for (int pass = 1; pass <= passes; pass++)
+            {
+                string output = Path.Combine(dir, $"out-{pass}.png");
+                var args = new List<string> { "-i", input, "-o", output, "-m", install.ModelsDir, "-n", model, "-f", "png" };
+                if (pass == passes && options.Width is int width)
+                    args.AddRange(["-w", width.ToString(CultureInfo.InvariantCulture)]);
+                else
+                    args.AddRange(["-s", options.Scale.ToString(CultureInfo.InvariantCulture)]);
+                if (options.GpuId is int gpu) args.AddRange(["-g", gpu.ToString(CultureInfo.InvariantCulture)]);
+                if (options.TileSize > 0) args.AddRange(["-t", options.TileSize.ToString(CultureInfo.InvariantCulture)]);
+                if (options.Tta) args.Add("-x");
+                var (exit, stderr) = await FfmpegRunner.RunAsync(install.Exe, args, timeout.Token);
+                if (exit != 0 || !File.Exists(output))
+                    throw new InvalidOperationException("Falha na ampliação por IA — " + Reason(stderr));
+                input = output;
+            }
 
-            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(10));
-            (int Exit, string Stderr) run;
+            var result = ImageIO.Load(input);
             try
             {
-                run = FfmpegRunner.RunAsync(install.Exe,
-                    ["-i", input, "-o", output, "-m", install.ModelsDir, "-n", Model, "-s", Factor.ToString(), "-f", "png"],
-                    timeout.Token).GetAwaiter().GetResult();
-            }
-            catch (OperationCanceledException)
-            {
-                throw new InvalidOperationException("AI upscaling took longer than 10 minutes and was stopped.");
-            }
-            // The tool can exit with 0 without writing anything, so check for the file too.
-            if (run.Exit != 0 || !File.Exists(output))
-                throw new InvalidOperationException("AI upscaling failed: " + Reason(run.Stderr));
-
-            var result = ImageIO.Load(output);
-            try
-            {
-                if (result.Width != source.Width * Factor || result.Height != source.Height * Factor)
-                    throw new InvalidDataException($"AI upscaling returned an unexpected size ({result.Width}×{result.Height}).");
+                double expectedHeight = targetWidth * (double)source.Height / source.Width;
+                if (result.Width != targetWidth || Math.Abs(result.Height - expectedHeight) > 1)
+                    throw new InvalidDataException($"A ampliação por IA retornou um tamanho inesperado ({result.Width}×{result.Height}).");
                 MatchSourceColour(result, source);
                 return result;
             }
-            catch
-            {
-                result.Dispose();
-                throw;
-            }
+            catch { result.Dispose(); throw; }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new InvalidOperationException("A ampliação por IA foi interrompida após 10 minutos.");
         }
         finally
         {
-            try { Directory.Delete(dir, true); } catch { /* the cache folder can be cleared by hand */ }
+            try { Directory.Delete(dir, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
     }
 
@@ -99,7 +225,7 @@ public sealed class Upscayl(AppPaths paths)
         using var small = new Mat();
         Cv2.Resize(enlarged, small, source.Size(), 0, 0, InterpolationFlags.Area);
         if (Cv2.Norm(small, source, NormTypes.L1) / ((double)source.Width * source.Height * source.Channels()) > 40)
-            throw new InvalidDataException("AI upscaling produced an image that does not match the artwork. Check the graphics driver.");
+            throw new InvalidDataException("A imagem ampliada por IA diverge da arte. Verifique o driver de vídeo.");
 
         using var wanted = new Mat();
         using var got = new Mat();
@@ -120,6 +246,14 @@ public sealed class Upscayl(AppPaths paths)
     {
         var lines = stderr.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
             .Where(l => !l.EndsWith('%')).TakeLast(3).ToList();
-        return lines.Count == 0 ? "no details" : string.Join(" ", lines);
+        return lines.Count == 0 ? "sem detalhes" : string.Join(" ", lines);
     }
+}
+
+
+public record UpscaylOptions(string Model = Upscayl.Model, int Scale = Upscayl.Factor,
+    int? Width = null, bool DoublePass = false, int? GpuId = null, int TileSize = 0,
+    bool Tta = false, bool EntireMockup = false)
+{
+    public int OutputWidth(int width) => Width ?? checked(width * Scale * (DoublePass ? Scale : 1));
 }

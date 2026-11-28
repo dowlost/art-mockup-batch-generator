@@ -28,13 +28,13 @@ public static class MockupPlan
         {
             if (!scene.IsReady)
                 throw new ArgumentException(scene.FrameCount == 2
-                    ? $"Scene '{scene.Name}' needs the 4 corners of both frames."
-                    : $"Scene '{scene.Name}' has no corners set.");
+                    ? $"Marque os quatro cantos dos dois quadros do cenário '{scene.Name}'."
+                    : $"Marque os cantos do cenário '{scene.Name}'.");
             var list = scene.FrameCount == 2 ? doubles : singles;
             if (list.Count == 0)
                 throw new ArgumentException(scene.FrameCount == 2
-                    ? $"Add at least one two-frame pair for scene '{scene.Name}'."
-                    : "Select at least one artwork.");
+                    ? $"Adicione pelo menos uma arte ou par ao cenário duplo '{scene.Name}'."
+                    : "Selecione pelo menos uma arte.");
             items.AddRange(list.Select(a => (scene, a)));
         }
         return items;
@@ -49,9 +49,9 @@ public static class MockupPlan
         var problems = items
             .Where(i => i.Scene.FrameCount == 2 && i.Art.Second == null)
             .Where(i => library.SceneSplit(i.Art.First)?.Layout != i.Scene.Arrangement)
-            .Select(i => $"{i.Art.First} ({(i.Scene.Arrangement == SplitLayout.Side ? "side by side" : "top and bottom")})")
+            .Select(i => $"{i.Art.First} ({(i.Scene.Arrangement == SplitLayout.Side ? "lado a lado" : "um acima do outro")})")
             .Distinct().ToList();
-        if (problems.Count > 0) throw new ArgumentException($"Split these artworks first: {string.Join(", ", problems)}.");
+        if (problems.Count > 0) throw new ArgumentException($"Divida estas artes primeiro — {string.Join(", ", problems)}.");
     }
 
     /// <summary>Output file name without extension: 0001__scene, 0001+0002__scene or 0001-split__scene.</summary>
@@ -104,21 +104,26 @@ public sealed class PreparedMockup : IDisposable
     /// </summary>
     public Mat Render(ArtworkLibrary library, ArtPair art, bool requireSplit = false)
     {
+        return RenderAsync(library, art, requireSplit, path => Task.FromResult(ImageIO.Load(path))).GetAwaiter().GetResult();
+    }
+
+    public async Task<Mat> RenderAsync(ArtworkLibrary library, ArtPair art, bool requireSplit, Func<string, Task<Mat>> load)
+    {
         var path = library.Resolve(art.First);
         if (_frames.Length == 2 && string.IsNullOrWhiteSpace(art.Second))
         {
             if (library.SceneSplit(art.First) is { } split && split.Layout == _layout)
             {
-                using var part1 = ImageIO.Load(split.Part1);
-                using var part2 = ImageIO.Load(split.Part2);
+                using var part1 = await load(split.Part1);
+                using var part2 = await load(split.Part2);
                 // part 1 is the left or top half, whichever frame was marked first
                 return Compose((_readingOrder[0], part1), (_readingOrder[1], part2));
             }
             if (requireSplit)
-                throw new ArgumentException($"'{art.First}' is not split for this scene yet. Confirm the split first.");
+                throw new ArgumentException($"'{art.First}' precisa ser dividida para este cenário. Salve o corte primeiro.");
         }
-        using var first = ImageIO.Load(path);
-        using var second = _frames.Length == 2 && !string.IsNullOrWhiteSpace(art.Second) ? ImageIO.Load(library.Resolve(art.Second)) : null;
+        using var first = await load(path);
+        using var second = _frames.Length == 2 && !string.IsNullOrWhiteSpace(art.Second) ? await load(library.Resolve(art.Second)) : null;
         return Render(first, second);
     }
 

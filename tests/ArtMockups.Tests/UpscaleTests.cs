@@ -77,7 +77,7 @@ public sealed class UpscaleTests : IDisposable
     {
         var source = Source("deep.png", 400, 300, MatType.CV_16UC3);
         var error = Assert.Throws<ArgumentException>(() => DiptychSplit.Export(source, OutDir, SplitLayout.Side, 0.5, 150, "png", Fake));
-        Assert.Contains("16-bit", error.Message);
+        Assert.Contains("16 bits", error.Message);
     }
 
     [Fact]
@@ -119,6 +119,7 @@ public sealed class UpscaleTests : IDisposable
         Directory.CreateDirectory(Path.Combine(_dir, "models"));
         File.WriteAllText(Path.Combine(_dir, "bin", exe), "");
         File.WriteAllText(Path.Combine(_dir, "models", Upscayl.Model + ".bin"), "");
+        File.WriteAllText(Path.Combine(_dir, "models", Upscayl.Model + ".param"), "");
         try
         {
             Environment.SetEnvironmentVariable("ARTMOCKUPS_UPSCAYL", _dir);

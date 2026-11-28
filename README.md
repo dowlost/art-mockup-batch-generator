@@ -1,111 +1,59 @@
-# Art Mockup Batch Generator (.NET)
+# Gerador de mockups de arte (.NET)
 
-Places your artwork into the blank frames of room photos ("scenes") and renders mockups in bulk: still images and
-zoom-in videos, and prepares the print files. The mockups are deterministic compositing (perspective warp + lighting
-blend) — no AI image generation. See [PRD.md](PRD.md).
+Aplicativo local para aplicar artes aos quadros de fotos de ambientes, gerar mockups e vídeos com zoom e preparar arquivos para impressão. A composição usa perspectiva e iluminação da foto. Consulte os [requisitos do produto](PRD.md).
 
-## Run
+## Executar
 
-```
-dotnet run
-```
+No Windows com o SDK do .NET 10, execute `dotnet run` e abra o endereço exibido no terminal. O padrão fora do perfil de lançamento é `http://localhost:8000`.
 
-Then open http://localhost:8000. Requires the .NET 10 SDK (change `TargetFramework` in `ArtMockups.csproj` to `net9.0` if needed).
-Videos need **ffmpeg**: put `ffmpeg.exe` next to the app, install it (`winget install Gyan.FFmpeg`) or set `ARTMOCKUPS_FFMPEG` to its path.
+Para gerar vídeos, coloque `ffmpeg.exe` na pasta do projeto, instale o FFmpeg no PATH ou defina `ARTMOCKUPS_FFMPEG` com o caminho do executável. Em outros sistemas, use o pacote nativo do OpenCvSharp correspondente ao sistema.
 
-> The project references `OpenCvSharp4.runtime.win`. On macOS/Linux, swap it for the matching OpenCvSharp4 runtime package.
+## Gerar em um único modal
 
-## Workflow
+1. Na primeira tela, clique em **Adicionar imagem** e selecione várias imagens PNG, JPEG ou WebP do computador. As imagens são copiadas para a pasta de artes configurada, sem sobrescrever arquivos de mesmo nome.
+2. O modal identifica a orientação de cada arte pelas dimensões e mostra quantas artes, imagens e vídeos ficam em cada categoria. Selecione os arquivos para quadros duplos na seção separada **Artes para quadros duplos**. O vídeo usa o Cenário 3 de cada categoria quando disponível.
+3. Configure as imagens e o vídeo e clique em **Gerar**. O modal oferece JPEG ou PNG, qualidade máxima, substituição, resolução do vídeo, duração, FPS, zoom, retorno à cena inteira e prévia dos três momentos. Você pode acompanhar, cancelar, abrir a pasta de saída ou baixar tudo em ZIP.
 
-1. **Scenes** – upload a room photo (or drop it into `data/scenes/`), click the 4 corners of the blank frame area
-   (TL → TR → BR → BL), tune fit mode / lighting / glare / feather, preview live, **Save**. For a photo with two frames,
-   set **Frames in this photo** to 2 and click 4 corners for frame 1, then 4 for frame 2 (the settings apply to both).
-2. **Artworks** – put files in `data/artworks/` (or point to another folder), tick the ones to include.
-   Files are named `0001.png`, `0002.png`, … The **Rename new artworks to 0000** button renames every file that is not
-   already four digits to the next numbers (e.g. after `0047`, new files become `0048`, `0049`, …; oldest first) and
-   records the old names in `data/artworks-rename-map.csv`.
-3. **Generate** – one list of scenes: tick a scene under **Images** for still mockups and/or under **Videos** for the
-   zoom video. One-frame scenes, side-by-side two-frame scenes and top-and-bottom two-frame scenes cannot be mixed:
-   ticking one kind disables the others. Press **Generate**. Everything goes into one flat folder, `data/output/`:
-   `0001__<scene>.jpg` and `0001__<scene>.mp4` (the video adds `_loop` when the zoom-back-out option is on).
-   Existing files are skipped unless *Overwrite* is on. Failures are listed and never stop the batch.
+A opção **Incluir artes originais sem cenário** vem marcada. O lote inclui uma cópia intacta de cada arte usada com o sufixo `_original` e a extensão de origem. Essas cópias entram no ZIP.
 
-Existing artwork files are never modified (the rename button only renames them; the *Print files* tab adds new ones).
+Os arquivos são salvos em `data/output/` como `0001__<cenario>.jpg` e `0001__<cenario>.mp4`. O vídeo que retorna à cena inteira recebe o sufixo `_loop`. Por padrão, arquivos existentes são pulados e falhas aparecem no resumo do lote.
 
-### Artwork numbers
+### Cenários duplos
 
-The artworks folder is **not tracked by git** (the files are large), so keep your own backup of it.
-`data/artworks-counter.json` is tracked and holds the highest number used. The app raises it whenever it lists or
-renames artworks, and renaming continues after it, so a number is never reused even if its file is gone or you are on
-another computer. Commit it together with the rename map.
+Abra **Cortar imagem** no cabeçalho para dividir uma arte inteira. Escolha a categoria e baixe as partes como PNGs avulsos ou em ZIP. Os nomes `conjunto-esquerda` e `conjunto-direita` identificam um Duplo-vertical. Os nomes `conjunto-cima` e `conjunto-baixo` identificam um Duplo-horizontal. Selecione os dois arquivos em **Adicionar imagem**. Se baixou o ZIP, extraia-o primeiro. O modal gera um conjunto por par, sem dividir as partes novamente, e avisa sobre pares incompletos ou duplicados.
 
-### Two-frame scenes
+Uma arte horizontal selecionada para duplo é dividida lado a lado e vai para Duplo-vertical. Uma arte vertical selecionada para duplo é dividida em cima e embaixo e vai para Duplo-horizontal. O modal permite ajustar a posição do recorte e salvar as partes `_part1` e `_part2`. Sem partes compatíveis salvas, o gerador faz o corte central em memória. As saídas usam `0001-split__<cenario>` para cortes automáticos e `parte1+parte2__<cenario>` para pares já separados.
 
-Each ticked artwork is shown split across both frames. If it is not split yet, the Generate tab shows how it will be
-cut; adjust *Crop position* if needed and press **Confirm split**, then **Generate**. This is a plain cut (no upscaling,
-no border) saved in the artworks folder as `0001_part1` (left or top) and `0001_part2`. One split exists per artwork:
-switching between side-by-side and top-and-bottom scenes cuts it again and replaces the parts (tick *Overwrite* to
-re-render existing outputs). **Custom pairs** put two different artworks in the two frames. Outputs are named
-`0001-split__<scene>` or `0001+0002__<scene>`. The zoom video ends on the area covering both frames.
 
-### Print files
+### Upscayl portátil no Windows
 
-The **Print files** tab prepares an original artwork (a numbered file such as `0001.png`) for printing and saves the
-result in the artworks folder, keeping the artwork's name. Upscaling and the white border happen only here:
+O modal **Adicionar imagem** tem a seção expansível **Upscayl**. Ative a ampliação para escolher modelo, escala de 1× a 16×, largura em pixels, ampliação dupla, TTA, GPU e tamanho dos blocos. O modal avisa sobre o impacto no desempenho a partir de 5×, com ampliação dupla ou TTA. O formato da imagem final fica nas configurações de imagem do mesmo modal, com PNG, JPEG e WebP. A qualidade do JPEG e do WebP pode ser ajustada na seção Upscayl.
 
-| Layout | Files | Art on each print | File size with border |
-|---|---|---|---|
-| Not split | `0001_print` | 60×90 cm portrait, 90×60 cm landscape | 61×91 / 91×61 cm |
-| Side by side (whole art 4:3) | `0001_print_part1`, `0001_print_part2` | two 60×90 cm | 61×91 cm each |
-| Top and bottom (whole art 3:4) | `0001_print_part1`, `0001_print_part2` | two 90×60 cm | 91×61 cm each |
+**Arte dentro do quadro** amplia os arquivos usados na composição. **Mockup completo** amplia a cena composta antes da exportação e do zoom. No segundo modo, a opção **Qualidade máxima** evita que o limite de 2 MB reduza as dimensões da imagem de saída. Os vídeos seguem o tamanho configurado no modal. Para refazer resultados existentes, marque **Substituir imagens e vídeos já gerados**. Os originais são preservados e os intermediários reutilizáveis ficam em `data/.cache/upscayl/`.
 
-- Every print gets a **0.5 cm white border** on each side, as room for positioning, cutting and framing.
-- The artwork is cropped to the layout's shape (centred; *Crop position* moves the cut).
-- **Original pixels** never resamples: with PNG output the art inside the border is pixel-identical to the source.
-  **150 / 200 / 300 DPI** resizes the whole crop once, then cuts it.
-- Files carry the DPI for the print size, keep an embedded RGB colour profile, and PNG keeps 16-bit depth.
-- A plain resize cannot add detail. The tab warns when the artwork has less than 150 DPI of real detail at print size.
-- On a 24-inch (609.6 mm) roll, a 61 cm wide file shows about 4.8 mm of white on each side. Print at 100% size.
-- No allowance is made for the gap between two frames.
-- Print files and scene parts are not listed as artworks in the app; only originals can be ticked or picked. The rename
-  button leaves them alone. Exporting again asks first, then replaces them.
+Em um clone novo, prepare o motor uma vez com `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\preparar-upscayl.ps1`. O script baixa os binários e os sete modelos oficiais da revisão fixada do Upscayl 2.15.0 e monta `tools/upscayl/` sem instalar o aplicativo. Depois do preparo, a ampliação funciona offline e requer GPU e driver compatíveis com Vulkan. `dotnet publish` inclui essa pasta quando ela está preparada. Também é possível transportar a pasta junto com os arquivos do projeto. O pacote inclui a licença e os links das fontes do Upscayl.
 
-#### AI upscale (Upscayl)
+## Gerenciar cenários e artes
 
-Install [Upscayl](https://github.com/upscayl/upscayl) and tick **AI upscale** (on by default when found). When a DPI
-choice needs more pixels than the artwork has, the crop is enlarged 4x with Upscayl's **Standard** model, matched back
-to the source's brightness and colour, then resized to the print size. For a 2688×1792 artwork, 4x gives about 300 DPI
-not split and about 200 DPI side by side. The added detail is generated by the model, so check the files before
-printing. It works in 8-bit and needs a Vulkan-capable graphics card.
+Na aba **Cenários**, adicione uma foto e marque os quatro cantos de cada quadro. Siga a ordem superior esquerdo, superior direito, inferior direito e inferior esquerdo. Ajuste o encaixe, a luz, o reflexo e as bordas, confira a prévia e salve.
 
-The app looks in the default install folders; set `ARTMOCKUPS_UPSCAYL` to Upscayl's `resources` folder otherwise.
-Upscayl is a separate AGPL-licensed program and is not shipped with this app. Check the licence of the model you use
-before selling prints made with it.
+A aba **Biblioteca** permite definir a pasta de artes, conferir miniaturas e numerar novas artes no padrão `0001`. O maior número utilizado é registrado em `data/artworks-counter.json` e o histórico em `data/artworks-rename-map.csv`. Mantenha uma cópia da pasta de artes, que fica fora do Git.
 
-### Zoom videos
+## Arquivos para impressão
 
-The artwork is placed in the frame exactly like in the still mockups (same lighting), then a virtual camera glides from the
-full view into the artwork. Because the frame position is known exactly, the video is perfectly steady.
+A aba **Arquivos para impressão** exporta artes numeradas inteiras ou em duas partes. Cada arquivo inclui uma borda branca de 0,5 cm em todos os lados.
 
-- Format: landscape 1920×1080 or portrait 1080×1920; seconds, FPS, **End fill** (how much of the width the artwork opening
-  fills at the end) and smooth ease in/out; optional zoom back out (5 s becomes exactly 10 s).
-- It is a flat digital zoom (no 3D parallax). Sharpness at the end of the zoom depends on the scene photo's resolution; the
-  UI shows the end-of-zoom upscale (above ~1.5x it can look soft: lower End fill or use a larger scene photo).
+| Disposição | Arte em cada impressão | Tamanho do arquivo |
+|---|---|---|
+| Inteira | 60×90 cm ou 90×60 cm | 61×91 cm ou 91×61 cm |
+| Lado a lado | Dois quadros de 60×90 cm | 61×91 cm por arquivo |
+| Um acima do outro | Dois quadros de 90×60 cm | 91×61 cm por arquivo |
 
-## Layout
+As saídas usam os sufixos `_print`, `_print_part1` e `_print_part2`. O PNG preserva a profundidade de 16 bits e o perfil RGB incorporado. Use os pixels originais ou escolha 150, 200 ou 300 DPI para redimensionar. A ampliação opcional usa o mesmo motor portátil e exige GPU compatível com Vulkan. Para apontar a uma instalação existente, defina `ARTMOCKUPS_UPSCAYL` com o caminho da pasta `resources`.
 
-```
-Program.cs                 minimal API + static frontend
-Services/Compositor.cs     PreparedScene: mask, shading map, glare, warp, blend
-Services/Stores.cs         scenes.json, config.json, artwork library + thumbnails + numbering + renaming
-Services/BatchService.cs   parallel background batch with cancel/skip/errors
-Services/Mockup.cs         one- and two-frame mockups, artwork pairs, output names
-Services/DiptychSplit.cs   print files: whole or split artwork with white border
-Services/PrintMetadata.cs  DPI and colour profile tags for the print files
-Services/Upscayl.cs        AI upscaling through an installed Upscayl
-Services/ZoomCamera.cs     virtual camera for the zoom videos
-Services/ZoomVideos.cs     zoom-video jobs (ffmpeg encode, progress, cancel)
-wwwroot/                   vanilla JS frontend (canvas corner picker)
-tests/ArtMockups.Tests/    tests   (dotnet test tests/ArtMockups.Tests)
-data/                      scenes/, artworks/, output/  (override root with ARTMOCKUPS_DATA)
-```
+## Estrutura e testes
+
+- `Program.cs` contém a API e serve a interface de `wwwroot/`.
+- `Services/` contém a biblioteca, o compositor, o processamento em lote, o vídeo e os arquivos de impressão.
+- `data/` contém os cenários, as artes e as saídas. Defina `ARTMOCKUPS_DATA` para usar outra raiz.
+- Execute os testes com `dotnet test tests/ArtMockups.Tests`.

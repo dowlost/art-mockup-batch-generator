@@ -10,7 +10,12 @@
   <ItemGroup>
     <Compile Remove="tests/**" />
     <Content Remove="tests/**" />
-    <None Remove="tests/**" />
+    <None Remove="tests/**;tools/upscayl/**" />
+    <None Include="tools/upscayl/**/*" CopyToPublishDirectory="PreserveNewest" />
+    <Content Remove="data/config.json;data/scenes/**/*" />
+    <None Remove="data/scenes/**/*;ffmpeg.exe" />
+    <None Include="data/scenes/**/*" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="ffmpeg.exe" Condition="Exists('ffmpeg.exe')" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -82,7 +82,7 @@ public sealed class SceneStore(AppPaths paths)
         if (File.Exists(paths.ScenesJson))
         {
             try { list = JsonSerializer.Deserialize<Doc>(File.ReadAllText(paths.ScenesJson), Json.Options)?.Scenes ?? new(); }
-            catch (JsonException ex) { throw new InvalidDataException($"scenes.json is invalid: {ex.Message}"); }
+            catch (JsonException ex) { throw new InvalidDataException($"O arquivo scenes.json é inválido — {ex.Message}"); }
         }
         // Pick up images dropped into data/scenes/ by hand.
         bool changed = false;
@@ -113,7 +113,7 @@ public sealed class SceneStore(AppPaths paths)
     {
         lock (_lock)
             return ReadUnlocked().FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-                   ?? throw new FileNotFoundException($"Scene '{name}' not found.");
+                   ?? throw new FileNotFoundException($"Cenário '{name}' não encontrado.");
     }
 
     public string ImagePath(Scene s) => Path.Combine(paths.ScenesDir, s.Image);
@@ -122,14 +122,16 @@ public sealed class SceneStore(AppPaths paths)
     {
         name = Names.ValidateSceneName(name);
         var ext = Path.GetExtension(originalFileName).ToLowerInvariant();
-        if (!ImageExt.Contains(ext)) throw new ArgumentException("Scene image must be PNG, JPG or WebP.");
+        if (!ImageExt.Contains(ext)) throw new ArgumentException("Use uma imagem PNG, JPEG ou WebP para o cenário.");
         lock (_lock)
         {
             var list = ReadUnlocked();
             if (list.Any(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
-                throw new ArgumentException($"A scene named '{name}' already exists.");
+                throw new ArgumentException($"Já existe um cenário com o nome '{name}'.");
             var file = name + ext;
-            using (var fs = File.Create(Path.Combine(paths.ScenesDir, file))) content.CopyTo(fs);
+            if (File.Exists(Path.Combine(paths.ScenesDir, file)))
+                file = $"{name}-{Guid.NewGuid():N}{ext}";
+            using (var fs = new FileStream(Path.Combine(paths.ScenesDir, file), FileMode.CreateNew)) content.CopyTo(fs);
             var scene = new Scene { Name = name, Image = file };
             list.Add(scene);
             WriteUnlocked(list);
@@ -143,16 +145,16 @@ public sealed class SceneStore(AppPaths paths)
         {
             var list = ReadUnlocked();
             var scene = list.FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-                        ?? throw new FileNotFoundException($"Scene '{name}' not found.");
+                        ?? throw new FileNotFoundException($"Cenário '{name}' não encontrado.");
             if (u.FrameCount is { } frames)
             {
-                if (frames is not (1 or 2)) throw new ArgumentException("A scene has 1 or 2 frames.");
+                if (frames is not (1 or 2)) throw new ArgumentException("Um cenário pode ter 1 ou 2 quadros.");
                 scene.FrameCount = frames;
             }
             foreach (var corners in new[] { u.Corners, u.Corners2 })
             {
                 if (corners == null) continue;
-                if (corners.Count != 4 && corners.Count != 0) throw new ArgumentException("Each frame needs exactly 4 corners.");
+                if (corners.Count != 4 && corners.Count != 0) throw new ArgumentException("Marque exatamente quatro cantos em cada quadro.");
                 if (corners.Count == 4)
                 {
                     using var img = ImageIO.Load(ImagePath(scene));
@@ -168,7 +170,7 @@ public sealed class SceneStore(AppPaths paths)
             {
                 var newName = Names.ValidateSceneName(u.Name);
                 if (list.Any(s => s != scene && s.Name.Equals(newName, StringComparison.OrdinalIgnoreCase)))
-                    throw new ArgumentException($"A scene named '{newName}' already exists.");
+                    throw new ArgumentException($"Já existe um cenário com o nome '{newName}'.");
                 scene.Name = newName;
             }
             WriteUnlocked(list);
@@ -182,11 +184,11 @@ public sealed class SceneStore(AppPaths paths)
         {
             var list = ReadUnlocked();
             var scene = list.FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-                        ?? throw new FileNotFoundException($"Scene '{name}' not found.");
+                        ?? throw new FileNotFoundException($"Cenário '{name}' não encontrado.");
             list.Remove(scene);
             WriteUnlocked(list);
             var img = ImagePath(scene);
-            if (File.Exists(img)) File.Delete(img);
+            if (!list.Any(s => s.Image.Equals(scene.Image, StringComparison.OrdinalIgnoreCase))) File.Delete(img);
         }
     }
 }
@@ -200,7 +202,7 @@ public sealed class SceneImageCache(SceneStore scenes)
     {
         var path = scenes.ImagePath(scene);
         var fi = new FileInfo(path);
-        if (!fi.Exists) throw new FileNotFoundException($"Scene image '{scene.Image}' is missing.");
+        if (!fi.Exists) throw new FileNotFoundException($"A imagem '{scene.Image}' do cenário está ausente.");
         var entry = _cache.AddOrUpdate(path,
             _ => (fi.LastWriteTimeUtc, fi.Length, new Lazy<Mat>(() => ImageIO.Load(path))),
             (_, old) => old.Stamp == fi.LastWriteTimeUtc && old.Len == fi.Length
@@ -258,9 +260,40 @@ public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
             ? Directory.EnumerateFiles(Folder).Where(IsImage).OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
             : Enumerable.Empty<string>();
 
+    public async Task<string> ImportAsync(string originalName, Stream source, CancellationToken cancellation)
+    {
+        var name = Path.GetFileName(originalName);
+        if (!IsImage(name)) throw new ArgumentException("Escolha uma imagem PNG, JPEG ou WebP.");
+        var folder = Folder;
+        Directory.CreateDirectory(folder);
+        var extension = Path.GetExtension(name);
+        var stem = Names.SafeFileStem(DerivedFiles.BaseStem(Path.GetFileNameWithoutExtension(name)));
+        var temporary = Path.Combine(folder, $".import-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            await using (var destination = File.Create(temporary))
+                await source.CopyToAsync(destination, cancellation);
+
+            using (ImageIO.Load(temporary)) { }
+            cancellation.ThrowIfCancellationRequested();
+            for (var index = 1; ; index++)
+            {
+                var file = (index == 1 ? stem : $"{stem}-{index}") + extension;
+                var target = Path.Combine(folder, file);
+                try
+                {
+                    File.Move(temporary, target);
+                    return file;
+                }
+                catch (IOException) when (File.Exists(target)) { }
+            }
+        }
+        finally { File.Delete(temporary); }
+    }
+
     public List<ArtworkInfo> List()
     {
-        if (!Directory.Exists(Folder)) throw new DirectoryNotFoundException($"Artwork folder not found: {Folder}");
+        if (!Directory.Exists(Folder)) throw new DirectoryNotFoundException($"Pasta de artes não encontrada — {Folder}");
         var files = Files().ToList();
         var result = new ArtworkInfo[files.Count];
         Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) },
@@ -318,9 +351,9 @@ public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
     public string Resolve(string file)
     {
         if (string.IsNullOrEmpty(file) || Path.GetFileName(file) != file)
-            throw new ArgumentException($"Invalid artwork name '{file}'.");
+            throw new ArgumentException($"Nome de arte inválido — '{file}'.");
         var full = Path.Combine(Folder, file);
-        if (!File.Exists(full)) throw new FileNotFoundException($"Artwork '{file}' not found.");
+        if (!File.Exists(full)) throw new FileNotFoundException($"Arte '{file}' não encontrada.");
         return full;
     }
 
@@ -370,7 +403,7 @@ public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
         static string Stem(string f) => Path.GetFileNameWithoutExtension(f);
         bool Ok(string f) => FourDigits.IsMatch(NumberPart(f));
         int last = LastNumber() ?? throw new InvalidDataException(
-            $"{Path.GetFileName(paths.CounterJson)} cannot be read. Fix it (for example after a merge conflict) before renaming.");
+            $"{Path.GetFileName(paths.CounterJson)} não pôde ser lido. Corrija o arquivo antes de renomear as artes.");
         int next = Math.Max(last, HighestNumber(files));
         var todo = files.Where(f => !Ok(f))
             .OrderBy(f => DerivedFiles.IsDerived(Stem(f))) // artworks first, so that their parts and prints can follow them
@@ -385,7 +418,7 @@ public sealed class ArtworkLibrary(AppPaths paths, ConfigStore config)
             if (!DerivedFiles.IsDerived(stem) || !numbers.TryGetValue(baseStem, out var number))
             {
                 do { next++; } while (next <= 9999 && Directory.EnumerateFiles(Folder, $"{next:0000}.*").Any());
-                if (next > 9999) throw new InvalidOperationException("No free four-digit numbers left (0001-9999).");
+                if (next > 9999) throw new InvalidOperationException("Os números de quatro dígitos (0001 a 9999) se esgotaram.");
                 number = next;
                 numbers.TryAdd(baseStem, number);
             }
